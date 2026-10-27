@@ -18,7 +18,7 @@ func (m *memoryRepo) Create(_ context.Context, fields domain.Fields) (domain.Car
 			return domain.Card{}, domain.ErrDuplicate
 		}
 	}
-	card := domain.Card{ID: int64(len(m.cards) + 1), Word: fields.Word, PartOfSpeech: fields.PartOfSpeech, Meaning: fields.Meaning}
+	card := domain.Card{ID: int64(len(m.cards) + 1), Word: fields.Word, PartOfSpeech: fields.PartOfSpeech, Meaning: fields.Meaning, Hint: fields.Hint}
 	m.cards = append(m.cards, card)
 	return card, nil
 }

@@ -6,6 +6,6 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-  server: { proxy: { '/api': 'http://127.0.0.1:3001' } },
+  server: { proxy: { '/api': process.env.API_PROXY_TARGET || 'http://127.0.0.1:3001' } },
   test: { environment: 'node', exclude: ['**/node_modules/**', 'e2e/**'] },
 })

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { filterCards, shuffleCards, type Card } from './cards'
 
 const cards: Card[] = [
-  { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', needsReview: false },
-  { id: 2, word: 'ant', partOfSpeech: 'noun', meaning: 'มด', needsReview: true },
-  { id: 3, word: 'Book', partOfSpeech: 'noun', meaning: 'หนังสือ', needsReview: true },
+  { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', hint: '', needsReview: false },
+  { id: 2, word: 'ant', partOfSpeech: 'noun', meaning: 'มด', hint: '', needsReview: true },
+  { id: 3, word: 'Book', partOfSpeech: 'noun', meaning: 'หนังสือ', hint: '', needsReview: true },
 ]
 
 describe('study deck', () => {

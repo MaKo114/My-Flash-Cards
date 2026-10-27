@@ -3,10 +3,11 @@ export type Card = {
   word: string
   partOfSpeech: string
   meaning: string
+  hint: string
   needsReview: boolean
 }
 
-export type CardFields = Pick<Card, 'word' | 'partOfSpeech' | 'meaning'>
+export type CardFields = Pick<Card, 'word' | 'partOfSpeech' | 'meaning' | 'hint'>
 
 export type ImportResult = {
   added: number

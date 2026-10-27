@@ -32,12 +32,18 @@ func main() {
 	if err := pool.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
-	migration, err := migrations.ReadFile("migrations/001_init.sql")
+	files, err := migrations.ReadDir("migrations")
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		log.Fatal(err)
+	for _, file := range files {
+		migration, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, string(migration)); err != nil {
+			log.Fatal(err)
+		}
 	}
 	app := fiber.New(fiber.Config{BodyLimit: 6 << 20})
 	httpapi.New(application.New(postgres.New(pool))).Register(app)

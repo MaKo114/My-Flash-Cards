@@ -1,10 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "DM Sans", "IBM Plex Sans Thai", sans-serif;
+  --font-sans: "IBM Plex Sans Thai", Tahoma, sans-serif;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.6;
 }
 
 :root { font-family: var(--font-sans); color: #273449; background: #f7f8fa; font-synthesis: none; }
+html { scrollbar-gutter: stable; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button { cursor: pointer; }
