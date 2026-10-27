@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const api = 'http://127.0.0.1:3002/api'
 
-test('manage, import and study cards', async ({ page, request }) => {
+test('manage, search, study and challenge cards', async ({ page, request }) => {
   const existing = await request.get(`${api}/cards`)
   expect(existing.ok()).toBeTruthy()
   for (const card of await existing.json() as { id: number }[]) {
@@ -45,10 +45,20 @@ test('manage, import and study cards', async ({ page, request }) => {
     buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\nApple,noun,คำซ้ำ\nAnt,noun,มด\nBad,verb,\n'),
   })
   await expect(page.getByText('เพิ่ม 1 คำ · ข้ามคำซ้ำ 1 คำ · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
+  const search = page.getByRole('textbox', { name: 'ค้นหาคำศัพท์' })
+  await search.fill('หนังสือ')
+  await expect(page.getByText('Book', { exact: true })).toBeVisible()
+  await expect(page.getByText('Apple', { exact: true })).not.toBeVisible()
+  await search.fill(' APP ')
+  await expect(page.getByText('Apple', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'ล้างคำค้น' }).click()
   await page.getByRole('button', { name: 'A', exact: true }).click()
   await expect(page.getByText('Apple', { exact: true })).toBeVisible()
   await expect(page.getByText('Ant', { exact: true })).toBeVisible()
   await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
+  await search.fill('book')
+  await expect(page.getByText('ไม่พบคำที่ค้นหา')).toBeVisible()
+  await page.getByRole('button', { name: 'ล้างคำค้น' }).click()
 
   await page.getByRole('button', { name: 'เก็บไว้ทบทวน Apple' }).click()
   await page.getByRole('button', { name: 'อ่านบัตรคำ' }).click()
@@ -86,4 +96,35 @@ test('manage, import and study cards', async ({ page, request }) => {
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'ลบ Book' }).click()
   await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Challenge', exact: true }).click()
+  await page.getByRole('button', { name: 'ENG', exact: true }).click()
+  await page.getByRole('button', { name: 'สุ่มคำ เปิด' }).click()
+  await page.getByLabel('หมวดอักษร').selectOption('A')
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Ant')
+  await page.getByLabel('คำตอบของฉัน').fill('มด')
+  await page.getByRole('button', { name: 'ดูเฉลย' }).click()
+  await expect(page.getByText('มด', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'จำได้', exact: true }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Apple')
+  await page.getByLabel('คำตอบของฉัน').fill('ไม่รู้')
+  await page.getByRole('button', { name: 'ดูเฉลย' }).click()
+  await expect(page.getByText('ผลแอปเปิล', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'ยังจำไม่ได้' }).click()
+  await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
+  await expect(page.getByText('จำได้ 1 คำ · ยังจำไม่ได้ 1 คำ')).toBeVisible()
+  const afterChallenge = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
+  expect(afterChallenge.find(card => card.word === 'Apple')?.needsReview).toBe(true)
+  expect(afterChallenge.find(card => card.word === 'Ant')?.needsReview).toBe(false)
+
+  await page.getByRole('button', { name: 'ต้องทบทวน', exact: true }).click()
+  await page.getByRole('button', { name: 'THAI', exact: true }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('ผลแอปเปิล')
+  await page.getByLabel('คำตอบของฉัน').fill('Apple')
+  await page.getByRole('button', { name: 'ดูเฉลย' }).click()
+  await expect(page.getByText('Apple', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'จำได้', exact: true }).click()
+  await expect(page.getByText('จำได้ 1 คำ · ยังจำไม่ได้ 0 คำ')).toBeVisible()
+  const afterReviewChallenge = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
+  expect(afterReviewChallenge.find(card => card.word === 'Apple')?.needsReview).toBe(false)
 })

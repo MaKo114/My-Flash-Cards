@@ -23,6 +23,14 @@ export function filterCards(cards: Card[], letter: string, reviewOnly: boolean) 
   )
 }
 
+export function searchCards(cards: Card[], query: string) {
+  const term = query.trim().toLowerCase()
+  if (!term) return cards
+  return cards.filter(card =>
+    [card.word, card.partOfSpeech, card.meaning].some(value => value.toLowerCase().includes(term)),
+  )
+}
+
 export function shuffleCards(cards: Card[], random: () => number = Math.random) {
   const result = [...cards]
   for (let i = result.length - 1; i > 0; i--) {
