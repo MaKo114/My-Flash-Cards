@@ -1,0 +1,32 @@
+export type Card = {
+  id: number
+  word: string
+  partOfSpeech: string
+  meaning: string
+  needsReview: boolean
+}
+
+export type CardFields = Pick<Card, 'word' | 'partOfSpeech' | 'meaning'>
+
+export type ImportResult = {
+  added: number
+  skipped: number
+  invalid: number
+  issues: { row: number; reason: string }[]
+}
+
+export function filterCards(cards: Card[], letter: string, reviewOnly: boolean) {
+  return cards.filter(card =>
+    (letter === 'ALL' || card.word.trim().toUpperCase().startsWith(letter)) &&
+    (!reviewOnly || card.needsReview),
+  )
+}
+
+export function shuffleCards(cards: Card[], random: () => number = Math.random) {
+  const result = [...cards]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}

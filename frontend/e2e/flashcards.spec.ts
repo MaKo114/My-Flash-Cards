@@ -1,0 +1,73 @@
+import { expect, test } from '@playwright/test'
+
+test('manage, import and study cards', async ({ page, request }) => {
+  const existing = await request.get('http://127.0.0.1:3001/api/cards')
+  expect(existing.ok()).toBeTruthy()
+  for (const card of await existing.json() as { id: number }[]) {
+    expect((await request.delete(`http://127.0.0.1:3001/api/cards/${card.id}`)).ok()).toBeTruthy()
+  }
+
+  await page.goto('/')
+  await expect(page.getByText('ยังไม่มีคำศัพท์')).toBeVisible()
+
+  async function add(word: string, pos: string, meaning: string) {
+    await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).first().click()
+    await page.getByLabel('คำศัพท์ภาษาอังกฤษ').fill(word)
+    await page.getByLabel('ชนิดของคำ').fill(pos)
+    await page.getByLabel('ความหมายภาษาไทย').fill(meaning)
+    await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).last().click()
+  }
+
+  await add('Apple', 'noun', 'แอปเปิล')
+  await add('Book', 'noun', 'หนังสือ')
+  const duplicate = await request.post('http://127.0.0.1:3001/api/cards', { data: { word: 'apple', partOfSpeech: 'NOUN', meaning: 'ซ้ำ' } })
+  expect(duplicate.status()).toBe(409)
+  const differentPart = await request.post('http://127.0.0.1:3001/api/cards', { data: { word: 'Apple', partOfSpeech: 'verb', meaning: 'คำอีกชนิด' } })
+  expect(differentPart.status()).toBe(201)
+  expect((await request.delete(`http://127.0.0.1:3001/api/cards/${(await differentPart.json()).id}`)).ok()).toBeTruthy()
+  await expect(page.getByText('Apple', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'แก้ไข Apple' }).click()
+  await page.getByLabel('ความหมายภาษาไทย').fill('ผลแอปเปิล')
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click()
+  await expect(page.getByText('ผลแอปเปิล')).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('ผลแอปเปิล')).toBeVisible()
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'words.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\nApple,noun,คำซ้ำ\nAnt,noun,มด\nBad,verb,\n'),
+  })
+  await expect(page.getByText('เพิ่ม 1 คำ · ข้ามคำซ้ำ 1 คำ · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
+  await page.getByRole('button', { name: 'A', exact: true }).click()
+  await expect(page.getByText('Apple', { exact: true })).toBeVisible()
+  await expect(page.getByText('Ant', { exact: true })).toBeVisible()
+  await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'เก็บไว้ทบทวน Apple' }).click()
+  await page.getByRole('button', { name: 'อ่านบัตรคำ' }).click()
+  await page.getByLabel('หมวดอักษร').selectOption('A')
+  await page.getByRole('button', { name: 'สุ่มคำ ปิด' }).click()
+  await expect(page.getByText('บัตรที่ 1 จาก 2')).toBeVisible()
+  const first = await page.getByTestId('front-value').textContent()
+  await expect(page.getByRole('button', { name: `ออกเสียง ${first}` })).toBeVisible()
+  await page.getByRole('button', { name: 'พลิกบัตร' }).click()
+  await expect(page.getByRole('button', { name: 'พลิกบัตร' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'บัตรถัดไป' }).click()
+  const second = await page.getByTestId('front-value').textContent()
+  expect(second).not.toBe(first)
+  await page.getByRole('button', { name: 'THAI ก่อน' }).click()
+  await expect(page.getByTestId('front-value')).toHaveText(second === 'Apple' ? 'ผลแอปเปิล' : 'มด')
+  await page.getByRole('button', { name: 'พลิกบัตร' }).click()
+  await expect(page.getByTestId('back-value')).toHaveText(second || '')
+  await page.getByRole('button', { name: 'ต้องทบทวน', exact: true }).last().click()
+  await expect(page.getByText('บัตรที่ 1 จาก 1')).toBeVisible()
+  await page.getByRole('button', { name: 'อยู่ในคำที่ต้องทบทวน' }).click()
+  await expect(page.getByText('ยังไม่มีบัตรในหมวดนี้')).toBeVisible()
+
+  await page.getByRole('button', { name: 'คลังคำศัพท์', exact: true }).click()
+  await page.getByRole('button', { name: 'ทั้งหมด', exact: true }).click()
+  await page.getByRole('button', { name: /เฉพาะคำที่ต้องทบทวน/ }).click()
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'ลบ Book' }).click()
+  await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
+})

@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flashcards
+      POSTGRES_USER: flashcards
+      POSTGRES_PASSWORD: flashcards
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - flashcards_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashcards -d flashcards"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  db-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flashcards_test
+      POSTGRES_USER: flashcards
+      POSTGRES_PASSWORD: flashcards
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashcards -d flashcards_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  flashcards_data:

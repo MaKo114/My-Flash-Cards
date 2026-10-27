@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", "IBM Plex Sans Thai", sans-serif;
+}
+
+:root { font-family: var(--font-sans); color: #273449; background: #f7f8fa; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+::selection { background: #dcd9ff; }
+
+.study-card { perspective: 1200px; }
+.study-card-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 550ms cubic-bezier(.2,.75,.25,1); }
+.study-card.flipped .study-card-inner { transform: rotateY(180deg); }
+.study-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.study-face.back { transform: rotateY(180deg); }

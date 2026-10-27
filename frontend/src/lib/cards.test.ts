@@ -1,0 +1,22 @@
+import { describe, expect, it } from 'vitest'
+import { filterCards, shuffleCards, type Card } from './cards'
+
+const cards: Card[] = [
+  { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', needsReview: false },
+  { id: 2, word: 'ant', partOfSpeech: 'noun', meaning: 'มด', needsReview: true },
+  { id: 3, word: 'Book', partOfSpeech: 'noun', meaning: 'หนังสือ', needsReview: true },
+]
+
+describe('study deck', () => {
+  it('filters the English first letter and review status together', () => {
+    expect(filterCards(cards, 'A', false).map(card => card.id)).toEqual([1, 2])
+    expect(filterCards(cards, 'A', true).map(card => card.id)).toEqual([2])
+  })
+
+  it('shuffles without changing the source or repeating a card', () => {
+    const result = shuffleCards(cards, () => 0)
+    expect(result.map(card => card.id)).toEqual([2, 3, 1])
+    expect(cards.map(card => card.id)).toEqual([1, 2, 3])
+    expect(new Set(result.map(card => card.id)).size).toBe(cards.length)
+  })
+})
