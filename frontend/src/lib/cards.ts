@@ -39,3 +39,15 @@ export function shuffleCards(cards: Card[], random: () => number = Math.random) 
   }
   return result
 }
+
+export function typingFeedback(word: string, answer: string) {
+  const expected = Array.from(word)
+  return Array.from(answer, (character, index) => ({
+    character,
+    correct: index < expected.length && character.toLocaleLowerCase() === expected[index].toLocaleLowerCase(),
+  }))
+}
+
+export function isTypingMatch(word: string, answer: string) {
+  return Array.from(word).length === Array.from(answer).length && typingFeedback(word, answer).every(letter => letter.correct)
+}

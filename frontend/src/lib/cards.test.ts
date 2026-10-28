@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterCards, searchCards, shuffleCards, type Card } from './cards'
+import { filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
 
 const cards: Card[] = [
   { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', hint: '', needsReview: false },
@@ -25,5 +25,13 @@ describe('study deck', () => {
     expect(result.map(card => card.id)).toEqual([2, 3, 1])
     expect(cards.map(card => card.id)).toEqual([1, 2, 3])
     expect(new Set(result.map(card => card.id)).size).toBe(cards.length)
+  })
+
+  it('marks each typed character and accepts the full spelling without case sensitivity', () => {
+    expect(typingFeedback('Apple', 'Apxle').map(letter => letter.correct)).toEqual([true, true, false, true, true])
+    expect(typingFeedback('Apple', 'Apples').at(-1)?.correct).toBe(false)
+    expect(isTypingMatch('Apple', 'apple')).toBe(true)
+    expect(isTypingMatch('Apple', 'Apxle')).toBe(false)
+    expect(isTypingMatch('Apple', 'Apples')).toBe(false)
   })
 })

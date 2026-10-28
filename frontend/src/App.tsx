@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
-import { filterCards, searchCards, shuffleCards, type Card, type CardFields, type ImportResult } from '@/lib/cards'
+import { filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportResult } from '@/lib/cards'
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const partsOfSpeech = ['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'determiner', 'phrase']
@@ -67,9 +67,14 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
   const prompt = mode === 'copy' ? card.word : firstLanguage === 'ENG' ? card.word : card.meaning
   const solution = mode === 'meaning' && firstLanguage === 'ENG' ? card.meaning : card.word
   const hint = card.hint || (mode === 'meaning' ? '' : card.meaning)
-  const correct = answer.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === card.word.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  const feedback = mode === 'meaning' ? [] : typingFeedback(card.word, answer)
+  const correct = isTypingMatch(card.word, answer)
 
-  useEffect(() => { if (mode !== 'meaning') speak(card.word) }, [card.id, card.word, mode])
+  useEffect(() => {
+    if (mode === 'meaning') return
+    speak(card.word)
+    return () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel() }
+  }, [card.id, card.word, mode])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -95,7 +100,8 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
       {hint && !revealed && <div className="mt-3"><Button variant="ghost" size="sm" type="button" onClick={() => setHintVisible(value => !value)}><Lightbulb size={16} /> {hintVisible ? 'ซ่อนคำใบ้' : 'ดูคำใบ้'}</Button>{hintVisible && <p role="status" className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{hint}</p>}</div>}
     </div>
     <form onSubmit={submit} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={revealed} onChange={event => { setAnswer(event.target.value); setTried(false) }} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning'} /></label>
+      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => { setAnswer(event.target.value); setTried(false) }} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning'} /></label>
+      {mode !== 'meaning' && <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3"><p className="text-xs font-semibold text-slate-500">ผลการพิมพ์ · เขียวตรง แดงผิด</p><div data-testid="typing-feedback" aria-label="ผลการพิมพ์" className="mt-2 flex min-h-9 flex-wrap gap-0.5 font-mono text-xl font-bold">{feedback.length ? feedback.map((letter, index) => <span key={index} data-state={letter.correct ? 'correct' : 'wrong'} className={`inline-flex min-w-5 justify-center rounded px-0.5 ${letter.correct ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{letter.character === ' ' ? '\u00a0' : letter.character}</span>) : <span className="font-sans text-sm font-normal text-slate-400">เริ่มพิมพ์เพื่อดูตัวอักษรที่ถูกและผิด</span>}</div></div>}
       {tried && !revealed && <p role="alert" className="mt-3 text-sm text-amber-700">ยังสะกดไม่ตรง ลองพิมพ์อีกครั้งหรือดูเฉลย</p>}
       {!revealed ? <div className="mt-4 flex justify-end gap-2">{tried && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit">{mode === 'meaning' ? 'ดูเฉลย' : 'ตรวจคำตอบ'} <ArrowRight size={16} /></Button></div> : <>
         {mode !== 'meaning' && correct && <p role="status" className="mt-4 text-sm font-semibold text-emerald-700">สะกดถูกแล้ว!</p>}
@@ -125,6 +131,7 @@ export default function App() {
   const [hintVisible, setHintVisible] = useState(false)
   const [challengeIds, setChallengeIds] = useState<number[]>([])
   const [challengeRun, setChallengeRun] = useState(0)
+  const [challengeStarted, setChallengeStarted] = useState(false)
   const [challengeDone, setChallengeDone] = useState(false)
   const [rememberedCount, setRememberedCount] = useState(0)
   const [missedCount, setMissedCount] = useState(0)
@@ -150,13 +157,14 @@ export default function App() {
   const challengeCard = cards.find(card => card.id === challengeIds[position])
   const reviewCount = cards.filter(card => card.needsReview).length
   const progressTotal = view === 'challenge' ? challengeIds.length : deck.length
-  const progressPosition = progressTotal ? Math.min(position, progressTotal - 1) + 1 : 0
+  const progressPosition = view === 'challenge' && !challengeStarted ? 0 : progressTotal ? Math.min(position, progressTotal - 1) + 1 : 0
   const progressPercent = view === 'challenge' && challengeDone ? 100 : progressTotal ? progressPosition / progressTotal * 100 : 0
 
   function startChallengeSession(nextLetter = letter, nextReviewOnly = reviewOnly, nextShuffled = shuffled, nextSeed = shuffleRun) {
     const selected = filterCards(cards, nextLetter, nextReviewOnly)
     const ordered = nextShuffled ? shuffleCards(selected, seeded(nextSeed)) : selected
     setChallengeIds(ordered.map(card => card.id))
+    setChallengeStarted(false)
     setChallengeDone(false)
     setRememberedCount(0)
     setMissedCount(0)
@@ -307,6 +315,7 @@ export default function App() {
               {view === 'challenge' ? (
                 challengeIds.length === 0 ? <Empty icon={<Target size={28} />} title="ยังไม่มีคำสำหรับ Challenge" description="ลองเปลี่ยนหมวดอักษรหรือปิดตัวกรองคำที่ต้องทบทวน" action={<Button variant="secondary" onClick={() => setView('library')}>ไปคลังคำศัพท์</Button>} /> :
                 challengeDone ? <div className="rounded-2xl border border-indigo-100 bg-white px-6 py-12 text-center shadow-sm"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Target size={28} /></div><h3 className="mt-5 text-2xl font-bold text-slate-900">จบรอบ Challenge</h3><p className="mt-2 text-sm text-slate-500">จำได้ {rememberedCount} คำ · ยังจำไม่ได้ {missedCount} คำ</p><Button className="mt-6" onClick={() => startChallengeSession()}><RotateCcw size={17} /> เริ่มรอบใหม่</Button></div> :
+                !challengeStarted ? <div className="flex min-h-72 flex-col items-center justify-center rounded-[28px] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 px-6 text-center shadow-sm"><div className="rounded-2xl bg-indigo-100 p-4 text-indigo-600"><Target size={28} /></div><h3 className="mt-5 text-xl font-bold text-slate-900">พร้อมฝึก {challengeIds.length} คำ</h3><p className="mt-2 text-sm text-slate-500">{challengeMode === 'meaning' ? 'กดเริ่มเมื่อพร้อมทบทวนความหมาย' : 'เสียงคำศัพท์จะเล่นหลังจากกดเริ่ม'}</p><Button className="mt-6" onClick={() => setChallengeStarted(true)}>เริ่ม Challenge <ArrowRight size={17} /></Button></div> :
                 challengeCard ? <ChallengePanel key={challengeRun + '-' + challengeCard.id + '-' + firstLanguage + '-' + challengeMode} card={challengeCard} mode={challengeMode} firstLanguage={firstLanguage} onAssess={assessChallenge} /> :
                 <Empty icon={<Target size={28} />} title="ไม่พบคำศัพท์" description="กลับไปคลังคำศัพท์แล้วเริ่มรอบใหม่" action={<Button onClick={openChallenge}>เริ่มรอบใหม่</Button>} />
               ) : current ? <><div className="study-card h-[300px] cursor-pointer select-none sm:h-[320px]" onClick={() => { setFlipped(value => !value); setHintVisible(false) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setFlipped(value => !value); setHintVisible(false) } }} role="button" tabIndex={0} aria-label="พลิกบัตร" aria-pressed={flipped}><div className="study-card-inner" style={{ transform: flipped ? 'rotateY(180deg)' : undefined }}><div className="study-face flex flex-col items-center justify-center rounded-[28px] border border-indigo-100 bg-gradient-to-br from-white via-white to-indigo-50 p-8 text-center shadow-[0_16px_50px_-20px_rgba(74,66,156,.22)]"><span className="absolute left-7 top-7 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-indigo-600">{firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}</span><span className="absolute right-7 top-7 text-xs font-medium text-slate-400">ด้านหน้า</span><span data-testid="front-value" className="max-w-full break-words text-3xl font-bold leading-tight text-slate-900 sm:text-5xl">{firstLanguage === 'ENG' ? current.word : current.meaning}</span>{firstLanguage === 'ENG' && <span className="mt-4 rounded-full bg-slate-100 px-3 py-1 text-sm italic text-slate-500">{current.partOfSpeech}</span>}{hintVisible && current.hint && <span role="status" className="mt-5 max-h-28 max-w-[90%] overflow-y-auto rounded-xl bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800"><Lightbulb size={16} className="mr-1 inline-block" />{current.hint}</span>}<span className="absolute bottom-8 text-xs font-medium text-slate-400">คลิกเพื่อดูเฉลย · พลิกบัตร</span></div><div className="study-face back flex flex-col items-center justify-center rounded-[28px] border border-indigo-200 bg-indigo-600 p-8 text-center text-white shadow-[0_16px_50px_-20px_rgba(74,66,156,.3)]"><span className="absolute left-7 top-7 rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wider">{firstLanguage === 'ENG' ? 'ความหมาย' : 'ENGLISH'}</span><span className="absolute right-7 top-7 text-xs text-indigo-200">ด้านหลัง</span><span data-testid="back-value" className="max-w-full break-words text-3xl font-bold leading-tight sm:text-5xl">{firstLanguage === 'ENG' ? current.meaning : current.word}</span>{firstLanguage === 'THAI' && <span className="mt-4 rounded-full bg-white/15 px-3 py-1 text-sm italic">{current.partOfSpeech}</span>}<span className="absolute bottom-8 text-xs text-indigo-200">คลิกเพื่อกลับไปด้านหน้า</span></div></div></div>
