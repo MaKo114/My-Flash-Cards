@@ -97,6 +97,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByRole('button', { name: 'ลบ Book' }).click()
   await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
 
+  await page.setViewportSize({ width: 1600, height: 900 })
   await page.getByRole('button', { name: 'Challenge', exact: true }).click()
   await expect(page.getByRole('button', { name: 'เริ่ม Challenge' })).toBeVisible()
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
@@ -139,6 +140,10 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   const copyWord = (await page.getByTestId('challenge-prompt').textContent())!
+  const panel = await page.getByTestId('challenge-prompt').locator('xpath=ancestor::form').boundingBox()
+  expect(panel).not.toBeNull()
+  expect(panel!.y).toBeLessThan(450)
+  expect(panel!.y + panel!.height).toBeLessThan(900)
   await expect(page.getByRole('button', { name: 'ฟังอีกครั้ง' })).toBeVisible()
   await page.getByRole('button', { name: 'ดูคำใบ้' }).click()
   await expect(page.getByRole('status').filter({ hasText: copyWord === 'Apple' ? 'ผลไม้สีแดง' : 'มด' })).toBeVisible()
