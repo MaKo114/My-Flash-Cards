@@ -140,6 +140,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   const copyWord = (await page.getByTestId('challenge-prompt').textContent())!
+  await expect(page.getByRole('button', { name: 'เสียงตอบรับ เปิด' })).toHaveAttribute('aria-pressed', 'true')
   const panel = await page.getByTestId('challenge-prompt').locator('xpath=ancestor::form').boundingBox()
   expect(panel).not.toBeNull()
   expect(panel!.y).toBeLessThan(450)
@@ -158,9 +159,12 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').fill(copyWord.toLowerCase())
   await expect(page.getByTestId('typing-feedback').locator('[data-state="wrong"]')).toHaveCount(0)
   await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
+  await expect(page.getByTestId('answer-result')).toHaveText('ถูกต้อง!')
   await expect(page.getByText('คำที่ 2 จาก 2')).toBeVisible()
   const nextCopyWord = (await page.getByTestId('challenge-prompt').textContent())!
   expect(nextCopyWord).not.toBe(copyWord)
+  await page.getByRole('button', { name: 'เสียงตอบรับ เปิด' }).click()
+  await expect(page.getByRole('button', { name: 'เสียงตอบรับ ปิด' })).toHaveAttribute('aria-pressed', 'false')
 
   await page.getByRole('button', { name: 'ฟังแล้วพิมพ์' }).click()
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
@@ -174,6 +178,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').fill('wrong')
   await expect(page.getByTestId('typing-feedback').locator('[data-state="wrong"]')).not.toHaveCount(0)
   await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
+  await expect(page.getByTestId('answer-result')).toHaveText('ยังไม่ถูก เก็บไว้ทบทวน')
   await expect(page.getByText('คำที่ 2 จาก 2')).toBeVisible()
   const afterTyping = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
   expect(afterTyping.find(card => card.word === copyWord)?.needsReview).toBe(true)
