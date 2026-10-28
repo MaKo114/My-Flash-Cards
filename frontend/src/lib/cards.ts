@@ -23,11 +23,16 @@ export function filterCards(cards: Card[], letter: string, reviewOnly: boolean) 
   )
 }
 
+export function filterByPartOfSpeech(cards: Card[], partOfSpeech: string) {
+  if (partOfSpeech === 'ALL') return cards
+  return cards.filter(card => card.partOfSpeech.trim().toLowerCase() === partOfSpeech.toLowerCase())
+}
+
 export function searchCards(cards: Card[], query: string) {
   const term = query.trim().toLowerCase()
   if (!term) return cards
   return cards.filter(card =>
-    [card.word, card.partOfSpeech, card.meaning].some(value => value.toLowerCase().includes(term)),
+    [card.word, card.meaning].some(value => value.toLowerCase().includes(term)),
   )
 }
 

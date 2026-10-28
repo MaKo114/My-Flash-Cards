@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
-import { filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportResult } from '@/lib/cards'
+import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportResult } from '@/lib/cards'
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const partsOfSpeech = ['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'determiner', 'phrase']
@@ -118,6 +118,7 @@ export default function App() {
   const [view, setView] = useState<'library' | 'study' | 'challenge'>('library')
   const [letter, setLetter] = useState('ALL')
   const [reviewOnly, setReviewOnly] = useState(false)
+  const [partFilter, setPartFilter] = useState('ALL')
   const [search, setSearch] = useState('')
   const [shuffled, setShuffled] = useState(false)
   const [shuffleRun, setShuffleRun] = useState(0)
@@ -146,7 +147,8 @@ export default function App() {
   }, [])
 
   const filtered = useMemo(() => filterCards(cards, letter, reviewOnly), [cards, letter, reviewOnly])
-  const libraryCards = useMemo(() => searchCards(filtered, search), [filtered, search])
+  const partOptions = useMemo(() => [...new Set([...cards.map(card => card.partOfSpeech.trim().toLowerCase()), ...(partFilter === 'ALL' ? [] : [partFilter])])].filter(Boolean).sort(), [cards, partFilter])
+  const libraryCards = useMemo(() => searchCards(filterByPartOfSpeech(filtered, partFilter), search), [filtered, partFilter, search])
   const selectedVisibleIds = libraryCards.filter(card => selectedIds.has(card.id)).map(card => card.id)
   const deck = useMemo(() => shuffled ? shuffleCards(filtered, seeded(shuffleRun)) : filtered, [filtered, shuffled, shuffleRun])
   const currentIndex = Math.min(position, Math.max(0, deck.length - 1))
@@ -282,8 +284,9 @@ export default function App() {
             {importResult && <ImportNotice result={importResult} onClose={() => setImportResult(null)} />}
             <div className="mb-7 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-indigo-50 p-2.5 text-indigo-600"><BookOpen size={20} /></div><span className="text-sm font-medium text-slate-500">คำศัพท์ทั้งหมด</span></div><p className="mt-3 text-3xl font-bold text-slate-900">{cards.length}<span className="ml-2 text-sm font-medium text-slate-400">คำ</span></p></div><div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-amber-50 p-2.5 text-amber-500"><Star size={20} /></div><span className="text-sm font-medium text-slate-500">ต้องทบทวน</span></div><p className="mt-3 text-3xl font-bold text-slate-900">{reviewCount}<span className="ml-2 text-sm font-medium text-slate-400">คำ</span></p></div></div>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <div><h3 className="text-base font-bold text-slate-900">รายการคำศัพท์</h3><p className="text-xs text-slate-400">เลือกอักษรแรกหรือค้นหาคำที่ต้องการ</p></div>
+              <div><h3 className="text-base font-bold text-slate-900">รายการคำศัพท์</h3><p className="text-xs text-slate-400">เลือกอักษรแรก ชนิดของคำ หรือค้นหาคำที่ต้องการ</p></div>
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">ชนิดของคำ<select aria-label="กรองชนิดของคำ" value={partFilter} onChange={event => { setPartFilter(event.target.value); setSelectedIds(new Set()) }} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-indigo-400"><option value="ALL">ทุกชนิด</option>{partOptions.map(part => <option key={part} value={part}>{part}</option>)}</select></label>
                 <div role="search" className="relative w-full sm:w-72">
                   <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <Input aria-label="ค้นหาคำศัพท์" placeholder="ค้นหาคำศัพท์หรือความหมาย" value={search} onChange={event => { setSearch(event.target.value); setSelectedIds(new Set()) }} className="pl-10 pr-10" />
@@ -294,7 +297,7 @@ export default function App() {
             </div>
             <div className="mb-5 flex flex-wrap gap-1.5"><button onClick={() => changeLetter('ALL')} className={`h-8 rounded-lg px-3 text-xs font-bold ${letter === 'ALL' ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-white text-slate-500 hover:border-indigo-300'}`}>ทั้งหมด</button>{alphabet.map(item => <button key={item} onClick={() => changeLetter(item)} className={`h-8 min-w-8 rounded-lg px-1 text-xs font-bold ${letter === item ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-white text-slate-500 hover:border-indigo-300'}`}>{item}</button>)}</div>
             {libraryCards.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-3"><label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600"><input type="checkbox" aria-label="เลือกทั้งหมดที่แสดง" checked={selectedVisibleIds.length === libraryCards.length} onChange={toggleAllVisible} className="h-4 w-4 accent-indigo-600" />เลือกทั้งหมดที่แสดง</label>{selectedVisibleIds.length > 0 && <><span className="text-sm text-slate-500">เลือก {selectedVisibleIds.length} คำ</span><Button variant="danger" size="sm" disabled={deletingSelected} onClick={() => void removeSelected()}><Trash2 size={15} /> {deletingSelected ? 'กำลังลบ...' : 'ลบที่เลือก'}</Button><Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>ยกเลิกการเลือก</Button></>}</div>}
-            {libraryCards.length === 0 ? <Empty icon={<BookOpen size={28} />} title={cards.length === 0 ? 'ยังไม่มีคำศัพท์' : search.trim() ? 'ไม่พบคำที่ค้นหา' : 'ไม่พบคำศัพท์ในหมวดนี้'} description={cards.length === 0 ? 'เริ่มสะสมคำศัพท์คำแรก หรือจะนำเข้าจากไฟล์ CSV ก็ได้' : search.trim() ? 'ลองเปลี่ยนคำค้นหรือปิดตัวกรองอื่น' : 'ลองเลือกอักษรอื่น หรือปิดตัวกรองคำที่ต้องทบทวน'} action={cards.length === 0 ? <Button onClick={openNew}><Plus size={16} /> เพิ่มคำแรก</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            {libraryCards.length === 0 ? <Empty icon={<BookOpen size={28} />} title={cards.length === 0 ? 'ยังไม่มีคำศัพท์' : search.trim() ? 'ไม่พบคำที่ค้นหา' : 'ไม่พบคำศัพท์ในหมวดนี้'} description={cards.length === 0 ? 'เริ่มสะสมคำศัพท์คำแรก หรือจะนำเข้าจากไฟล์ CSV ก็ได้' : search.trim() ? 'ลองเปลี่ยนคำค้นหรือปิดตัวกรองอื่น' : 'ลองเปลี่ยนตัวกรองอักษร ชนิดของคำ หรือคำที่ต้องทบทวน'} action={cards.length === 0 ? <Button onClick={openNew}><Plus size={16} /> เพิ่มคำแรก</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
               <div className="hidden grid-cols-[28px_1.2fr_1fr_1.5fr_100px] gap-4 border-b border-slate-100 bg-slate-50/70 px-6 py-3 text-xs font-bold text-slate-400 sm:grid"><span /><span>คำศัพท์</span><span>ชนิดของคำ</span><span>ความหมาย</span><span className="text-right">จัดการ</span></div>
               <div className="divide-y divide-slate-100">{libraryCards.map(card => <div key={card.id} className="grid grid-cols-[28px_minmax(0,1fr)] items-center gap-3 px-5 py-4 sm:grid-cols-[28px_1.2fr_1fr_1.5fr_100px] sm:gap-4 sm:px-6">
                 <input type="checkbox" aria-label={`เลือก ${card.word}`} checked={selectedIds.has(card.id)} onChange={() => toggleSelected(card.id)} className="h-4 w-4 accent-indigo-600" />
