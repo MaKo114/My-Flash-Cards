@@ -42,7 +42,7 @@ func TestImportReportsDuplicatesAndInvalidRows(t *testing.T) {
 	if len(result.Issues) != 1 || result.Issues[0].Row != 5 {
 		t.Fatalf("unexpected issues: %#v", result.Issues)
 	}
-	if repo.cards[2].Word != "two, words" {
+	if repo.cards[2].Word != "Two, words" {
 		t.Fatalf("quoted field was not parsed: %#v", repo.cards[2])
 	}
 }
@@ -65,7 +65,7 @@ func TestImportRejectsInvalidEncodingBeforeWriting(t *testing.T) {
 
 func TestCreateTrimsAndRejectsMissingFields(t *testing.T) {
 	service := New(&memoryRepo{})
-	card, err := service.Create(context.Background(), domain.Fields{Word: " Run ", PartOfSpeech: " verb ", Meaning: " วิ่ง "})
+	card, err := service.Create(context.Background(), domain.Fields{Word: " run ", PartOfSpeech: " verb ", Meaning: " วิ่ง "})
 	if err != nil || card.Word != "Run" || card.PartOfSpeech != "verb" {
 		t.Fatalf("unexpected card: %#v, %v", card, err)
 	}

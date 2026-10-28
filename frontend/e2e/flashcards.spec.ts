@@ -24,8 +24,8 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
     await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).last().click()
   }
 
-  await add('Apple', 'noun', 'แอปเปิล', 'ผลไม้สีแดง')
-  await add('Book', 'noun', 'หนังสือ')
+  await add('apple', 'noun', 'แอปเปิล', 'ผลไม้สีแดง')
+  await add('book', 'noun', 'หนังสือ')
   const duplicate = await request.post(`${api}/cards`, { data: { word: 'apple', partOfSpeech: 'NOUN', meaning: 'ซ้ำ' } })
   expect(duplicate.status()).toBe(409)
   const differentPart = await request.post(`${api}/cards`, { data: { word: 'Apple', partOfSpeech: 'verb', meaning: 'คำอีกชนิด' } })
@@ -34,6 +34,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await expect(page.getByText('Apple', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'แก้ไข Apple' }).click()
   await expect(page.getByRole('textbox', { name: /คำใบ้/ })).toHaveValue('ผลไม้สีแดง')
+  await page.getByLabel('คำศัพท์ภาษาอังกฤษ').fill('apple')
   await page.getByLabel('ความหมายภาษาไทย').fill('ผลแอปเปิล')
   await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click()
   await expect(page.getByText('ผลแอปเปิล')).toBeVisible()
@@ -42,7 +43,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
 
   await page.locator('input[type="file"]').setInputFiles({
     name: 'words.csv', mimeType: 'text/csv',
-    buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\nApple,noun,คำซ้ำ\nAnt,noun,มด\nBad,verb,\n'),
+    buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\napple,noun,คำซ้ำ\nant,noun,มด\nBad,verb,\n'),
   })
   await expect(page.getByText('เพิ่ม 1 คำ · ข้ามคำซ้ำ 1 คำ · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
   const search = page.getByRole('textbox', { name: 'ค้นหาคำศัพท์' })

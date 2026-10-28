@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -35,5 +36,8 @@ func (f Fields) Clean() (Fields, error) {
 	if f.Word == "" || f.PartOfSpeech == "" || f.Meaning == "" {
 		return Fields{}, ErrInvalid
 	}
+	letters := []rune(f.Word)
+	letters[0] = unicode.ToUpper(letters[0])
+	f.Word = string(letters)
 	return f, nil
 }
