@@ -29,6 +29,8 @@ npm.cmd run dev
 
 เปิด <http://127.0.0.1:5173> ระบบสร้างและปรับตารางฐานข้อมูลให้ตอน backend เริ่มทำงาน ข้อมูลเก็บไว้ใน Docker volume ชื่อ `flashcards_data`
 
+ถ้า backend แจ้ง `connect refused` ที่พอร์ต 5432 ให้เปิด Docker Desktop แล้วรัน `docker compose up -d --wait db` จากรากโปรเจกต์ก่อนเริ่ม backend ฐานใช้งาน `db` ใช้พอร์ต 5432 ส่วน `db-test` ใช้พอร์ต 5433 สำหรับ E2E เท่านั้น เมื่อ Docker Desktop ทำงาน คอนเทนเนอร์ `db` จะเริ่มใหม่อัตโนมัติหลังรีสตาร์ต เว้นแต่สั่งหยุดคอนเทนเนอร์เอง
+
 ค่าปริยายของ backend คือ `DATABASE_URL=postgres://flashcards:flashcards@localhost:5432/flashcards?sslmode=disable` และ `LISTEN_ADDR=127.0.0.1:3001` สามารถเปลี่ยนผ่าน environment variables ได้
 
 CSV ต้องเป็น UTF-8 และมีหัวคอลัมน์ตามลำดับ `คำศัพท์,ชนิดของคำ,ความหมาย` เช่น:
