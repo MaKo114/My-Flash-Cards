@@ -61,7 +61,6 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
   const [answer, setAnswer] = useState('')
   const [revealed, setRevealed] = useState(false)
   const [hintVisible, setHintVisible] = useState(false)
-  const [tried, setTried] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const prompt = mode === 'copy' ? card.word : firstLanguage === 'ENG' ? card.word : card.meaning
@@ -69,6 +68,7 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
   const hint = card.hint || (mode === 'meaning' ? '' : card.meaning)
   const feedback = mode === 'meaning' ? [] : typingFeedback(card.word, answer)
   const correct = isTypingMatch(card.word, answer)
+  const wordLetters = Array.from(card.word)
 
   useEffect(() => {
     if (mode === 'meaning') return
@@ -79,8 +79,7 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
   function submit(event: FormEvent) {
     event.preventDefault()
     if (mode === 'meaning') { setRevealed(true); return }
-    setTried(true)
-    if (correct) setRevealed(true)
+    if (!pending) void assess(revealed ? false : correct)
   }
 
   async function assess(remembered: boolean) {
@@ -93,22 +92,20 @@ function ChallengePanel({ card, mode, firstLanguage, onAssess }: { card: Card; m
   return <div className="mx-auto max-w-3xl">
     <div className="flex min-h-48 flex-col items-center justify-center rounded-[28px] border border-indigo-100 bg-gradient-to-br from-white to-indigo-50 px-6 py-6 text-center shadow-sm">
       <span className="mb-3 rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700">{mode === 'listen' ? 'ฟังแล้วพิมพ์' : mode === 'copy' ? 'พิมพ์ตามคำศัพท์' : firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}</span>
-      {mode === 'listen' ? <p data-testid="challenge-prompt" className="text-xl font-bold text-slate-800">ฟังเสียงแล้วพิมพ์คำศัพท์</p> : <p data-testid="challenge-prompt" className="max-w-full break-words text-3xl font-bold leading-tight text-slate-900 sm:text-5xl">{prompt}</p>}
+      {mode === 'copy' ? <p data-testid="challenge-prompt" aria-label={card.word} className="max-w-full break-words text-3xl font-bold leading-tight sm:text-5xl"><span data-testid="typing-feedback" aria-hidden="true">{wordLetters.map((character, index) => <span key={index} data-state={feedback[index] ? feedback[index].correct ? 'correct' : 'wrong' : 'pending'} className={feedback[index] ? feedback[index].correct ? 'text-emerald-600' : 'text-red-600' : 'text-slate-900'}>{character === ' ' ? '\u00a0' : character}</span>)}{feedback.slice(wordLetters.length).map((letter, index) => <span key={`extra-${index}`} data-state="wrong" className="text-red-600">{letter.character === ' ' ? '\u00a0' : letter.character}</span>)}</span></p> : mode === 'listen' ? <><p data-testid="challenge-prompt" className="text-lg font-semibold text-slate-700">ฟังเสียงแล้วพิมพ์คำศัพท์</p><div data-testid="typing-feedback" aria-label="อักษรที่พิมพ์" className="mt-3 min-h-12 max-w-full break-words text-3xl font-bold leading-tight sm:text-5xl">{feedback.map((letter, index) => <span key={index} data-state={letter.correct ? 'correct' : 'wrong'} className={letter.correct ? 'text-emerald-600' : 'text-red-600'}>{letter.character === ' ' ? '\u00a0' : letter.character}</span>)}</div>{revealed && <p data-testid="challenge-answer" className="mt-2 text-xl font-bold text-slate-900">{card.word}</p>}</> : <p data-testid="challenge-prompt" className="max-w-full break-words text-3xl font-bold leading-tight text-slate-900 sm:text-5xl">{prompt}</p>}
       {mode === 'meaning' && firstLanguage === 'ENG' && <span className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-sm italic text-slate-500">{card.partOfSpeech}</span>}
       {mode !== 'meaning' && 'speechSynthesis' in window && <Button variant="secondary" size="sm" type="button" onClick={() => speak(card.word)} className="mt-4"><Volume2 size={16} /> ฟังอีกครั้ง</Button>}
       {mode === 'listen' && !('speechSynthesis' in window) && <p role="alert" className="mt-3 text-sm text-amber-700">เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน ลองใช้โหมดพิมพ์ตามคำศัพท์</p>}
       {hint && !revealed && <div className="mt-3"><Button variant="ghost" size="sm" type="button" onClick={() => setHintVisible(value => !value)}><Lightbulb size={16} /> {hintVisible ? 'ซ่อนคำใบ้' : 'ดูคำใบ้'}</Button>{hintVisible && <p role="status" className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{hint}</p>}</div>}
     </div>
     <form onSubmit={submit} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => { setAnswer(event.target.value); setTried(false) }} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning'} /></label>
-      {mode !== 'meaning' && <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3"><p className="text-xs font-semibold text-slate-500">ผลการพิมพ์ · เขียวตรง แดงผิด</p><div data-testid="typing-feedback" aria-label="ผลการพิมพ์" className="mt-2 flex min-h-9 flex-wrap gap-0.5 font-mono text-xl font-bold">{feedback.length ? feedback.map((letter, index) => <span key={index} data-state={letter.correct ? 'correct' : 'wrong'} className={`inline-flex min-w-5 justify-center rounded px-0.5 ${letter.correct ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{letter.character === ' ' ? '\u00a0' : letter.character}</span>) : <span className="font-sans text-sm font-normal text-slate-400">เริ่มพิมพ์เพื่อดูตัวอักษรที่ถูกและผิด</span>}</div></div>}
-      {tried && !revealed && <p role="alert" className="mt-3 text-sm text-amber-700">ยังสะกดไม่ตรง ลองพิมพ์อีกครั้งหรือดูเฉลย</p>}
-      {!revealed ? <div className="mt-4 flex justify-end gap-2">{tried && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit">{mode === 'meaning' ? 'ดูเฉลย' : 'ตรวจคำตอบ'} <ArrowRight size={16} /></Button></div> : <>
-        {mode !== 'meaning' && correct && <p role="status" className="mt-4 text-sm font-semibold text-emerald-700">สะกดถูกแล้ว!</p>}
+      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={(mode === 'meaning' && revealed) || pending} readOnly={mode !== 'meaning' && revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => setAnswer(event.target.value)} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning' && !revealed} /></label>
+      {mode !== 'meaning' && <><p className="mt-3 text-sm text-slate-500">อักษรบนการ์ดจะแสดงสีเขียวเมื่อถูก สีแดงเมื่อผิด · กด Enter เพื่อไปคำถัดไป</p>{revealed && <p className="mt-2 text-sm text-amber-700">ดูเฉลยแล้ว คำนี้จะถูกเก็บไว้ทบทวน</p>}<div className="mt-4 flex justify-end gap-2">{!revealed && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit" disabled={pending || (!revealed && !answer.trim())}>{pending ? 'กำลังบันทึก...' : 'คำถัดไป'} <ArrowRight size={16} /></Button></div></>}
+      {mode === 'meaning' && (!revealed ? <div className="mt-4 flex justify-end"><Button type="submit">ดูเฉลย <ArrowRight size={16} /></Button></div> : <>
         <div className="mt-5 rounded-xl bg-indigo-50 p-4"><p className="text-xs font-bold text-indigo-600">เฉลย</p><p className="mt-1 text-xl font-bold text-slate-900">{solution}</p>{mode === 'meaning' && firstLanguage === 'THAI' && <p className="mt-1 text-sm italic text-slate-500">{card.partOfSpeech}</p>}</div>
         <p className="mt-5 text-sm text-slate-500">เลือกตามที่จำได้จริงเพื่อบันทึกผลและไปคำถัดไป</p>
         <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={pending} onClick={() => void assess(false)}><Star size={16} /> ยังจำไม่ได้</Button><Button type="button" disabled={pending} onClick={() => void assess(true)}><Check size={16} /> จำได้</Button></div>
-      </>}
+      </>)}
       {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
     </form>
   </div>
