@@ -36,6 +36,11 @@ function CardEditor({ card, onCancel, onSave }: { card: Card | null; onCancel: (
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (!fields.partOfSpeech.trim()) {
+      setError('กรุณาเลือกชนิดของคำ')
+      document.getElementById('card-part-of-speech')?.focus()
+      return
+    }
     setSaving(true); setError('')
     try { await onSave(fields) }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ') }
@@ -46,7 +51,7 @@ function CardEditor({ card, onCancel, onSave }: { card: Card | null; onCancel: (
     <div><DialogTitle className="text-xl font-bold text-slate-900">{card ? 'แก้ไขคำศัพท์' : 'เพิ่มคำศัพท์ใหม่'}</DialogTitle><DialogDescription className="mt-1 text-sm text-slate-500">เติมรายละเอียดเพื่อสร้างบัตรคำศัพท์ของคุณ</DialogDescription></div>
     <div className="space-y-4">
       <label className="block text-sm font-semibold text-slate-700">คำศัพท์ภาษาอังกฤษ<Input autoFocus value={fields.word} onChange={event => setFields({ ...fields, word: event.target.value })} placeholder="เช่น Serendipity" className="mt-2" required /></label>
-      <div><label htmlFor="card-part-of-speech" className="block text-sm font-semibold text-slate-700">ชนิดของคำ</label><Select id="card-part-of-speech" label="ชนิดของคำ" name="partOfSpeech" value={partSelection} onValueChange={value => { setPartSelection(value); setFields({ ...fields, partOfSpeech: value === 'other' ? '' : value }) }} required placeholder="เลือกชนิดของคำ" options={[...partsOfSpeech.map(part => ({ value: part, label: part })), { value: 'other', label: 'อื่น ๆ' }]} className="mt-2 h-11 w-full" />{partSelection === 'other' && <Input aria-label="ระบุชนิดของคำ" value={fields.partOfSpeech} onChange={event => setFields({ ...fields, partOfSpeech: event.target.value })} placeholder="ระบุชนิดของคำ" className="mt-2" required />}</div>
+      <div><label htmlFor="card-part-of-speech" className="block text-sm font-semibold text-slate-700">ชนิดของคำ</label><Select id="card-part-of-speech" label="ชนิดของคำ" value={partSelection} onValueChange={value => { setPartSelection(value); setFields({ ...fields, partOfSpeech: value === 'other' ? '' : value }) }} required placeholder="เลือกชนิดของคำ" options={[...partsOfSpeech.map(part => ({ value: part, label: part })), { value: 'other', label: 'อื่น ๆ' }]} className="mt-2 h-11 w-full" />{partSelection === 'other' && <Input aria-label="ระบุชนิดของคำ" value={fields.partOfSpeech} onChange={event => setFields({ ...fields, partOfSpeech: event.target.value })} placeholder="ระบุชนิดของคำ" className="mt-2" required />}</div>
       <label className="block text-sm font-semibold text-slate-700">ความหมายภาษาไทย<textarea value={fields.meaning} onChange={event => setFields({ ...fields, meaning: event.target.value })} placeholder="พิมพ์ความหมายของคำศัพท์" rows={3} required className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-800 shadow-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" /></label>
       <label className="block text-sm font-semibold text-slate-700">คำใบ้ <span className="font-normal text-slate-400">(ไม่บังคับ)</span><Input value={fields.hint} onChange={event => setFields({ ...fields, hint: event.target.value })} placeholder="เช่น ผลไม้สีแดง" className="mt-2" /></label>
     </div>
