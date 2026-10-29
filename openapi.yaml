@@ -1,0 +1,375 @@
+openapi: 3.0.3
+info:
+  title: my-flash-card API
+  version: 1.0.0
+  description: |
+    API สำหรับคลังคำศัพท์ชุดเดียว หนึ่งคำสะกดมีหนึ่งบัตรและเก็บชนิดของคำ
+    กับความหมายเป็นรายการอิสระ ไม่มีระบบบัญชี ดู User Stories และ
+    Acceptance Criteria ใน docs/ ของ repository
+servers:
+  - url: https://my-flash-cards-puce.vercel.app
+    description: Vercel
+  - url: http://127.0.0.1:3001
+    description: Local backend
+security: []
+tags:
+  - name: Health
+    description: ตรวจการเริ่มทำงานของ backend
+  - name: Cards
+    description: จัดการบัตรคำศัพท์และสถานะต้องทบทวน
+  - name: Import
+    description: นำเข้าข้อมูลคำศัพท์จาก CSV
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: ตรวจว่า backend เริ่มทำงานสำเร็จ
+      responses:
+        '200':
+          description: Backend พร้อมตอบคำขอ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                ok: true
+  /api/cards:
+    get:
+      tags: [Cards]
+      operationId: listCards
+      summary: แสดงบัตรคำศัพท์ทั้งหมด
+      description: เรียงตามคำสะกดโดยไม่สนตัวพิมพ์; ตัวกรองและการค้นหาอยู่ที่ frontend
+      responses:
+        '200':
+          description: รายการบัตร อาจเป็น array ว่าง
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Card'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Cards]
+      operationId: createCard
+      summary: เพิ่มบัตรคำศัพท์
+      description: |
+        คำสะกดซ้ำโดยไม่สนตัวพิมพ์เพิ่มเป็นบัตรใหม่ไม่ได้ แม้ชนิดของคำต่างกัน
+        ให้แก้ไขบัตรเดิมเพื่อเพิ่มชนิดหรือความหมาย
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardInput'
+            example:
+              word: run
+              partsOfSpeech: [verb, noun]
+              meanings: [วิ่ง, การวิ่ง]
+              hint: ใช้ขา
+      responses:
+        '201':
+          description: เพิ่มบัตรแล้ว
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/cards/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    put:
+      tags: [Cards]
+      operationId: updateCard
+      summary: แทนรายละเอียดคำศัพท์ของบัตร
+      description: ต้องส่งคำสะกด ชนิดของคำ และความหมายครบ; สถานะต้องทบทวนคงเดิม
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardInput'
+      responses:
+        '200':
+          description: บัตรหลังแก้ไข
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [Cards]
+      operationId: deleteCard
+      summary: ลบบัตรคำศัพท์
+      responses:
+        '204':
+          description: ลบแล้ว ไม่มี response body
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/cards/{id}/review:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    patch:
+      tags: [Cards]
+      operationId: setCardReview
+      summary: ตั้งสถานะต้องทบทวน
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [needsReview]
+              properties:
+                needsReview:
+                  type: boolean
+            example:
+              needsReview: true
+      responses:
+        '200':
+          description: บัตรหลังเปลี่ยนสถานะ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/cards/import:
+    post:
+      tags: [Import]
+      operationId: importCardsCsv
+      summary: นำเข้าคำศัพท์จาก CSV
+      description: |
+        ไฟล์ UTF-8 ขนาดไม่เกิน 5 MiB ต้องมีหัวคอลัมน์
+        คำศัพท์,ชนิดของคำ,ความหมาย ตามลำดับ รองรับ BOM และช่องที่มีหลายค่า
+        คั่นด้วย comma เมื่อครอบด้วยเครื่องหมายคำพูดตามรูปแบบ CSV
+        แถวคำสะกดเดิมจะรวมเฉพาะชนิดและความหมายใหม่ ไม่เปลี่ยนคำใบ้หรือสถานะทบทวน
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: ไฟล์ CSV UTF-8
+      responses:
+        '200':
+          description: ผลนำเข้าแยกจำนวนแถวที่เพิ่ม รวม ข้าม และผิดรูปแบบ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResult'
+              example:
+                added: 1
+                merged: 1
+                skipped: 1
+                invalid: 1
+                issues:
+                  - row: 5
+                    reason: ข้อมูลไม่ครบ
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: ไฟล์ CSV ใหญ่เกิน 5 MiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  parameters:
+    CardId:
+      name: id
+      in: path
+      required: true
+      description: ID ของบัตรคำศัพท์
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  responses:
+    BadRequest:
+      description: ID, JSON หรือข้อมูลบัตร/CSV ไม่ถูกต้อง
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: ไม่พบบัตรตาม ID
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: คำสะกดซ้ำกับบัตรที่มีอยู่
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Health:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+    CardInput:
+      type: object
+      description: |
+        รูปแบบหลักใช้ partsOfSpeech และ meanings เป็นรายการอิสระ
+        API ยังรับ partOfSpeech และ meaning แบบ string เดิมเพื่อความเข้ากันได้
+        หากส่งทั้งแบบรายการและแบบเดิม ระบบใช้รายการก่อน
+        ระบบตัดช่องว่างและยกตัวแรกของ word เป็นตัวใหญ่
+      required: [word]
+      allOf:
+        - anyOf:
+            - required: [partsOfSpeech]
+            - required: [partOfSpeech]
+        - anyOf:
+            - required: [meanings]
+            - required: [meaning]
+      properties:
+        word:
+          type: string
+          minLength: 1
+          description: คำอังกฤษ; ต้องไม่เป็นช่องว่างล้วน
+        partsOfSpeech:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          description: รายการชนิดของคำ ไม่จับคู่ตามตำแหน่งกับ meanings
+        meanings:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          description: รายการความหมายภาษาไทย
+        partOfSpeech:
+          type: string
+          minLength: 1
+          deprecated: true
+          description: ค่าเดียวแบบเดิม ใช้เมื่อไม่ส่ง partsOfSpeech
+        meaning:
+          type: string
+          minLength: 1
+          deprecated: true
+          description: ค่าเดียวแบบเดิม ใช้เมื่อไม่ส่ง meanings
+        hint:
+          type: string
+          description: คำใบ้ ไม่บังคับ; ค่าเริ่มต้นเป็นข้อความว่าง
+    Card:
+      type: object
+      required: [id, word, partsOfSpeech, meanings, partOfSpeech, meaning, hint, needsReview]
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        word:
+          type: string
+        partsOfSpeech:
+          type: array
+          items:
+            type: string
+        meanings:
+          type: array
+          items:
+            type: string
+        partOfSpeech:
+          type: string
+          deprecated: true
+          description: รายการชนิดของคำที่รวมเป็นข้อความคั่นด้วย comma เพื่อความเข้ากันได้
+        meaning:
+          type: string
+          deprecated: true
+          description: รายการความหมายที่รวมเป็นข้อความคั่นด้วย comma เพื่อความเข้ากันได้
+        hint:
+          type: string
+        needsReview:
+          type: boolean
+      example:
+        id: 12
+        word: Run
+        partsOfSpeech: [verb, noun]
+        meanings: [วิ่ง, การวิ่ง]
+        partOfSpeech: verb, noun
+        meaning: วิ่ง, การวิ่ง
+        hint: ใช้ขา
+        needsReview: false
+    ImportIssue:
+      type: object
+      required: [row, reason]
+      properties:
+        row:
+          type: integer
+          minimum: 2
+          description: ลำดับแถวข้อมูลในไฟล์ (หัวคอลัมน์คือแถว 1)
+        reason:
+          type: string
+    ImportResult:
+      type: object
+      required: [added, merged, skipped, invalid, issues]
+      properties:
+        added:
+          type: integer
+          minimum: 0
+          description: จำนวนแถวที่สร้างคำสะกดใหม่
+        merged:
+          type: integer
+          minimum: 0
+          description: จำนวนแถวที่เพิ่มชนิดหรือความหมายให้คำสะกดเดิม
+        skipped:
+          type: integer
+          minimum: 0
+          description: จำนวนแถวที่ไม่มีข้อมูลใหม่
+        invalid:
+          type: integer
+          minimum: 0
+          description: จำนวนแถวผิดรูปแบบหรือข้อมูลไม่ครบ
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportIssue'
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

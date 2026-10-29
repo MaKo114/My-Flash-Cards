@@ -70,6 +70,8 @@ E2E ใช้ฐานข้อมูล `flashcards_test` ที่พอร์
 
 `GET /api/cards`, `POST /api/cards`, `PUT /api/cards/:id`, `PATCH /api/cards/:id/review`, `DELETE /api/cards/:id`, `POST /api/cards/import` (multipart field `file`)
 
+เอกสาร [User Stories](docs/user-stories.md), [Acceptance Criteria](docs/acceptance-criteria.md) และ [OpenAPI](openapi.yaml) อธิบายพฤติกรรมและสัญญา API ของระบบปัจจุบัน
+
 ## ทดลอง Deploy บน Vercel กับ Neon
 
 1. Import repository นี้ใน Vercel ตั้ง Root Directory เป็นรากโปรเจกต์ และเลือก Framework Preset เป็น **Services** ไฟล์ `vercel.json` จะ build `frontend/` ด้วย Vite และ `backend/` ด้วย Go พร้อมส่ง `/api/*` ไปที่ backend
