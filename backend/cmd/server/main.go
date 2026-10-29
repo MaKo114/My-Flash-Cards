@@ -48,7 +48,9 @@ func main() {
 	app := fiber.New(fiber.Config{BodyLimit: 6 << 20})
 	httpapi.New(application.New(postgres.New(pool))).Register(app)
 	addr := os.Getenv("LISTEN_ADDR")
-	if addr == "" {
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	} else if addr == "" {
 		addr = "127.0.0.1:3001"
 	}
 	log.Fatal(app.Listen(addr))

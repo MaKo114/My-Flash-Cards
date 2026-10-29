@@ -65,3 +65,11 @@ E2E ใช้ฐานข้อมูล `flashcards_test` ที่พอร์
 ## API
 
 `GET /api/cards`, `POST /api/cards`, `PUT /api/cards/:id`, `PATCH /api/cards/:id/review`, `DELETE /api/cards/:id`, `POST /api/cards/import` (multipart field `file`)
+
+## ทดลอง Deploy บน Vercel กับ Neon
+
+1. Import repository นี้ใน Vercel ตั้ง Root Directory เป็นรากโปรเจกต์ และเลือก Framework Preset เป็น **Services** ไฟล์ `vercel.json` จะ build `frontend/` ด้วย Vite และ `backend/` ด้วย Go พร้อมส่ง `/api/*` ไปที่ backend
+2. ไปที่ Project Settings → Environment Variables แล้วเพิ่ม `DATABASE_URL` โดยนำค่า Neon จาก `backend/.env` ไปใส่ใน Production หากเปิด Preview ควรใช้ Neon branch หรือฐานข้อมูลแยก ห้าม commit ไฟล์ `.env`
+3. Deploy แล้วเปิด `/api/health` บน URL ที่ได้ เพื่อตรวจ API และการเชื่อมต่อฐานข้อมูล backend จะรัน migration ที่มีอยู่เมื่อเริ่มทำงาน
+
+GitHub Actions CI ใช้ PostgreSQL ทดสอบชั่วคราวที่พอร์ต 5433 ไม่ใช้ `DATABASE_URL` ของ Neon แอปยังไม่มีระบบล็อกอิน ดังนั้นผู้ที่เข้าถึงเว็บสาธารณะสามารถแก้ไขบัตรได้ ควรเปิด Vercel Deployment Protection ก่อนใช้งานกับข้อมูลส่วนตัว
