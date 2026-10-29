@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -22,7 +23,7 @@ func main() {
 	if url == "" {
 		url = "postgres://flashcards:flashcards@localhost:5432/flashcards?sslmode=disable"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
@@ -32,18 +33,8 @@ func main() {
 	if err := pool.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
-	files, err := migrations.ReadDir("migrations")
-	if err != nil {
+	if err := runMigrations(ctx, pool); err != nil {
 		log.Fatal(err)
-	}
-	for _, file := range files {
-		migration, err := migrations.ReadFile("migrations/" + file.Name())
-		if err != nil {
-			log.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, string(migration)); err != nil {
-			log.Fatal(err)
-		}
 	}
 	app := fiber.New(fiber.Config{BodyLimit: 6 << 20})
 	httpapi.New(application.New(postgres.New(pool))).Register(app)
@@ -54,4 +45,29 @@ func main() {
 		addr = "127.0.0.1:3001"
 	}
 	log.Fatal(app.Listen(addr))
+}
+
+func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(93276451)"); err != nil {
+		return err
+	}
+	for _, file := range files {
+		migration, err := migrations.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, string(migration)); err != nil {
+			return fmt.Errorf("migration %s: %w", file.Name(), err)
+		}
+	}
+	return tx.Commit(ctx)
 }

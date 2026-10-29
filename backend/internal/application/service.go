@@ -56,6 +56,7 @@ type ImportIssue struct {
 
 type ImportResult struct {
 	Added   int           `json:"added"`
+	Merged  int           `json:"merged"`
 	Skipped int           `json:"skipped"`
 	Invalid int           `json:"invalid"`
 	Issues  []ImportIssue `json:"issues"`
@@ -89,6 +90,14 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 			return result, ErrCSVHeader
 		}
 	}
+	existing, err := s.repo.List(ctx)
+	if err != nil {
+		return result, err
+	}
+	byWord := make(map[string]domain.Card, len(existing))
+	for _, card := range existing {
+		byWord[strings.ToLower(card.Word)] = card
+	}
 	for row := 2; ; row++ {
 		record, readErr := reader.Read()
 		if readErr == io.EOF {
@@ -107,18 +116,61 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ต้องมีข้อมูล 3 คอลัมน์"})
 			continue
 		}
-		_, err = s.Create(ctx, domain.Fields{Word: record[0], PartOfSpeech: record[1], Meaning: record[2]})
+		fields := domain.Fields{
+			Word:          record[0],
+			PartsOfSpeech: strings.Split(record[1], ","),
+			Meanings:      strings.Split(record[2], ","),
+		}
+		clean, cleanErr := fields.Clean()
+		if cleanErr != nil {
+			result.Invalid++
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ข้อมูลไม่ครบ"})
+			continue
+		}
+		old, exists := byWord[strings.ToLower(clean.Word)]
+		if exists {
+			parts, partsChanged := appendUnique(old.PartsOfSpeech, clean.PartsOfSpeech)
+			meanings, meaningsChanged := appendUnique(old.Meanings, clean.Meanings)
+			if !partsChanged && !meaningsChanged {
+				result.Skipped++
+				continue
+			}
+			updated, updateErr := s.Update(ctx, old.ID, domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint})
+			if updateErr != nil {
+				return result, fmt.Errorf("import row %d: %w", row, updateErr)
+			}
+			byWord[strings.ToLower(clean.Word)] = updated
+			result.Merged++
+			continue
+		}
+		created, err := s.Create(ctx, clean)
 		switch {
 		case err == nil:
+			byWord[strings.ToLower(clean.Word)] = created
 			result.Added++
 		case errors.Is(err, domain.ErrDuplicate):
 			result.Skipped++
-		case errors.Is(err, domain.ErrInvalid):
-			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ข้อมูลไม่ครบ"})
 		default:
 			return result, fmt.Errorf("import row %d: %w", row, err)
 		}
 	}
 	return result, nil
+}
+
+func appendUnique(existing, incoming []string) ([]string, bool) {
+	merged := append([]string(nil), existing...)
+	seen := make(map[string]bool, len(existing))
+	for _, value := range existing {
+		seen[strings.ToLower(strings.TrimSpace(value))] = true
+	}
+	changed := false
+	for _, value := range incoming {
+		key := strings.ToLower(value)
+		if !seen[key] {
+			merged = append(merged, value)
+			seen[key] = true
+			changed = true
+		}
+	}
+	return merged, changed
 }

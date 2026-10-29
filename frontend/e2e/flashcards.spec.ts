@@ -10,6 +10,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   }
 
   await page.goto('/')
+  await expect(page).toHaveTitle('my-flash-card')
   await expect(page.getByText('ยังไม่มีคำศัพท์')).toBeVisible()
   const pageWidth = await page.evaluate(() => document.documentElement.clientWidth)
   const sidebarHeight = async () => page.locator('aside').evaluate(element => Math.round(element.getBoundingClientRect().height))
@@ -37,8 +38,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   const duplicate = await request.post(`${api}/cards`, { data: { word: 'apple', partOfSpeech: 'NOUN', meaning: 'ซ้ำ' } })
   expect(duplicate.status()).toBe(409)
   const differentPart = await request.post(`${api}/cards`, { data: { word: 'Apple', partOfSpeech: 'verb', meaning: 'คำอีกชนิด' } })
-  expect(differentPart.status()).toBe(201)
-  expect((await request.delete(`${api}/cards/${(await differentPart.json()).id}`)).ok()).toBeTruthy()
+  expect(differentPart.status()).toBe(409)
   await expect(page.getByText('Apple', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'แก้ไข Apple' }).click()
   await expect(page.getByRole('textbox', { name: /คำใบ้/ })).toHaveValue('ผลไม้สีแดง')
@@ -51,9 +51,9 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
 
   await page.locator('input[type="file"]').setInputFiles({
     name: 'words.csv', mimeType: 'text/csv',
-    buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\napple,noun,คำซ้ำ\nant,noun,มด\nBad,verb,\n'),
+    buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\napple,noun,ผลแอปเปิล\nant,noun,มด\nBad,verb,\n'),
   })
-  await expect(page.getByText('เพิ่ม 1 คำ · ข้ามคำซ้ำ 1 คำ · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
+  await expect(page.getByText('เพิ่ม 1 คำ · รวมข้อมูล 0 แถว · ข้ามคำซ้ำ 1 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
   const search = page.getByRole('textbox', { name: 'ค้นหาคำศัพท์' })
   await search.fill('หนังสือ')
   await expect(page.getByText('Book', { exact: true })).toBeVisible()
@@ -245,4 +245,62 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'ลบ Run' }).click()
   await expect(page.getByText('Run', { exact: true })).not.toBeVisible()
+})
+
+test('groups a word with multiple parts and asks its spelling once per challenge', async ({ page, request }) => {
+  const existing = await request.get(`${api}/cards`)
+  for (const card of await existing.json() as { id: number }[]) {
+    expect((await request.delete(`${api}/cards/${card.id}`)).ok()).toBeTruthy()
+  }
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).first().click()
+  await page.getByLabel('คำศัพท์ภาษาอังกฤษ').fill('run')
+  await page.getByRole('combobox', { name: 'ชนิดของคำ', exact: true }).click()
+  await page.getByRole('option', { name: 'verb', exact: true }).click()
+  await page.getByRole('button', { name: 'เพิ่มชนิดของคำ' }).click()
+  await page.getByRole('combobox', { name: 'ชนิดของคำ 2' }).click()
+  await page.getByRole('option', { name: 'noun', exact: true }).click()
+  await page.getByLabel('ความหมายภาษาไทย').fill('วิ่ง\nการวิ่ง')
+  await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).last().click()
+
+  let entries = await (await request.get(`${api}/cards`)).json() as { word: string; partsOfSpeech: string[]; meanings: string[] }[]
+  expect(entries).toHaveLength(1)
+  expect(entries[0]).toMatchObject({ word: 'Run', partsOfSpeech: ['verb', 'noun'], meanings: ['วิ่ง', 'การวิ่ง'] })
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'book.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('คำศัพท์,ชนิดของคำ,ความหมาย\nabout,"verb, preposition","ประมาณ, รอบๆ, เกี่ยวกับ"\nrun,noun,การวิ่ง\nrun,adverb,อย่างรวดเร็ว\n'),
+  })
+  await expect(page.getByText('เพิ่ม 1 คำ · รวมข้อมูล 1 แถว · ข้ามคำซ้ำ 1 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 0 แถว')).toBeVisible()
+  entries = await (await request.get(`${api}/cards`)).json()
+  expect(entries).toHaveLength(2)
+  expect(entries.find(entry => entry.word === 'About')).toMatchObject({ partsOfSpeech: ['verb', 'preposition'], meanings: ['ประมาณ', 'รอบๆ', 'เกี่ยวกับ'] })
+  expect(entries.find(entry => entry.word === 'Run')).toMatchObject({ partsOfSpeech: ['verb', 'noun', 'adverb'], meanings: ['วิ่ง', 'การวิ่ง', 'อย่างรวดเร็ว'] })
+
+  const filter = page.getByRole('combobox', { name: 'กรองชนิดของคำ' })
+  await filter.click()
+  await page.getByRole('option', { name: 'preposition', exact: true }).click()
+  await expect(page.getByText('About', { exact: true })).toBeVisible()
+  await expect(page.getByText('Run', { exact: true })).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'อ่านบัตรคำ' }).click()
+  await expect(page.getByText('บัตรที่ 1 จาก 2')).toBeVisible()
+  await page.getByRole('button', { name: 'Challenge', exact: true }).click()
+  await expect(page.getByText('พร้อมฝึก 2 คำ')).toBeVisible()
+  await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('About')
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').fill('about')
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Run')
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').fill('run')
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
+  await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
+
+  await page.getByRole('button', { name: 'ทบทวนความหมาย' }).click()
+  await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('About')
+  await page.getByLabel('คำตอบของฉัน').fill('ประมาณ')
+  await page.getByRole('button', { name: 'ดูเฉลย' }).click()
+  await expect(page.getByText('ประมาณ, รอบๆ, เกี่ยวกับ', { exact: true })).toBeVisible()
 })

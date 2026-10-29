@@ -3,14 +3,17 @@ export type Card = {
   word: string
   partOfSpeech: string
   meaning: string
+  partsOfSpeech: string[]
+  meanings: string[]
   hint: string
   needsReview: boolean
 }
 
-export type CardFields = Pick<Card, 'word' | 'partOfSpeech' | 'meaning' | 'hint'>
+export type CardFields = Pick<Card, 'word' | 'partsOfSpeech' | 'meanings' | 'hint'>
 
 export type ImportResult = {
   added: number
+  merged: number
   skipped: number
   invalid: number
   issues: { row: number; reason: string }[]
@@ -25,14 +28,14 @@ export function filterCards(cards: Card[], letter: string, reviewOnly: boolean) 
 
 export function filterByPartOfSpeech(cards: Card[], partOfSpeech: string) {
   if (partOfSpeech === 'ALL') return cards
-  return cards.filter(card => card.partOfSpeech.trim().toLowerCase() === partOfSpeech.toLowerCase())
+  return cards.filter(card => card.partsOfSpeech.some(part => part.trim().toLowerCase() === partOfSpeech.toLowerCase()))
 }
 
 export function searchCards(cards: Card[], query: string) {
   const term = query.trim().toLowerCase()
   if (!term) return cards
   return cards.filter(card =>
-    [card.word, card.meaning].some(value => value.toLowerCase().includes(term)),
+    [card.word, ...card.meanings].some(value => value.toLowerCase().includes(term)),
   )
 }
 

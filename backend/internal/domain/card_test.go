@@ -14,4 +14,11 @@ func TestFieldsClean(t *testing.T) {
 	if _, err := (Fields{Word: "run", PartOfSpeech: " ", Meaning: "วิ่ง"}).Clean(); err != ErrInvalid {
 		t.Fatalf("expected ErrInvalid, got %v", err)
 	}
+	multiple, err := (Fields{Word: " about ", PartsOfSpeech: []string{" verb ", "preposition", "VERB"}, Meanings: []string{" ประมาณ ", "รอบๆ", "เกี่ยวกับ"}}).Clean()
+	if err != nil || multiple.Word != "About" || len(multiple.PartsOfSpeech) != 2 || len(multiple.Meanings) != 3 {
+		t.Fatalf("unexpected multiple values: %#v, %v", multiple, err)
+	}
+	if _, err := (Fields{Word: "run", PartsOfSpeech: []string{"verb", " "}, Meanings: []string{"วิ่ง"}}).Clean(); err != ErrInvalid {
+		t.Fatalf("expected ErrInvalid for an empty list item, got %v", err)
+	}
 }

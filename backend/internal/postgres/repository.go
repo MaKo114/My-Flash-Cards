@@ -10,7 +10,7 @@ import (
 	"my-flash-cards/backend/internal/domain"
 )
 
-const columns = "id, word, part_of_speech, meaning, hint, needs_review"
+const columns = "id, word, part_of_speech, meaning, parts_of_speech, meanings, hint, needs_review"
 
 type Repository struct{ db *pgxpool.Pool }
 
@@ -18,7 +18,7 @@ func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 func scan(row pgx.Row) (domain.Card, error) {
 	var card domain.Card
-	err := row.Scan(&card.ID, &card.Word, &card.PartOfSpeech, &card.Meaning, &card.Hint, &card.NeedsReview)
+	err := row.Scan(&card.ID, &card.Word, &card.PartOfSpeech, &card.Meaning, &card.PartsOfSpeech, &card.Meanings, &card.Hint, &card.NeedsReview)
 	return card, translate(err)
 }
 
@@ -37,7 +37,7 @@ func translate(err error) error {
 }
 
 func (r *Repository) List(ctx context.Context) ([]domain.Card, error) {
-	rows, err := r.db.Query(ctx, "SELECT "+columns+" FROM cards ORDER BY lower(word), lower(part_of_speech), id")
+	rows, err := r.db.Query(ctx, "SELECT "+columns+" FROM cards ORDER BY lower(word), id")
 	if err != nil {
 		return nil, err
 	}
@@ -55,14 +55,14 @@ func (r *Repository) List(ctx context.Context) ([]domain.Card, error) {
 
 func (r *Repository) Create(ctx context.Context, fields domain.Fields) (domain.Card, error) {
 	return scan(r.db.QueryRow(ctx,
-		"INSERT INTO cards (word, part_of_speech, meaning, hint) VALUES ($1,$2,$3,$4) RETURNING "+columns,
-		fields.Word, fields.PartOfSpeech, fields.Meaning, fields.Hint))
+		"INSERT INTO cards (word, part_of_speech, meaning, parts_of_speech, meanings, hint) VALUES ($1,$2,$3,$4,$5,$6) RETURNING "+columns,
+		fields.Word, fields.PartOfSpeech, fields.Meaning, fields.PartsOfSpeech, fields.Meanings, fields.Hint))
 }
 
 func (r *Repository) Update(ctx context.Context, id int64, fields domain.Fields) (domain.Card, error) {
 	return scan(r.db.QueryRow(ctx,
-		"UPDATE cards SET word=$2, part_of_speech=$3, meaning=$4, hint=$5, updated_at=now() WHERE id=$1 RETURNING "+columns,
-		id, fields.Word, fields.PartOfSpeech, fields.Meaning, fields.Hint))
+		"UPDATE cards SET word=$2, part_of_speech=$3, meaning=$4, parts_of_speech=$5, meanings=$6, hint=$7, updated_at=now() WHERE id=$1 RETURNING "+columns,
+		id, fields.Word, fields.PartOfSpeech, fields.Meaning, fields.PartsOfSpeech, fields.Meanings, fields.Hint))
 }
 
 func (r *Repository) SetReview(ctx context.Context, id int64, value bool) (domain.Card, error) {

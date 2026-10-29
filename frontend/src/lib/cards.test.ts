@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
 
 const cards: Card[] = [
-  { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', hint: '', needsReview: false },
-  { id: 2, word: 'ant', partOfSpeech: 'noun', meaning: 'มด', hint: '', needsReview: true },
-  { id: 3, word: 'Book', partOfSpeech: 'verb', meaning: 'หนังสือ', hint: '', needsReview: true },
+  { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', partsOfSpeech: ['noun'], meanings: ['แอปเปิล'], hint: '', needsReview: false },
+  { id: 2, word: 'ant', partOfSpeech: 'noun', meaning: 'มด', partsOfSpeech: ['noun'], meanings: ['มด'], hint: '', needsReview: true },
+  { id: 3, word: 'Book', partOfSpeech: 'verb', meaning: 'หนังสือ', partsOfSpeech: ['verb'], meanings: ['หนังสือ'], hint: '', needsReview: true },
 ]
 
 describe('study deck', () => {
@@ -24,6 +24,13 @@ describe('study deck', () => {
     expect(filterByPartOfSpeech(cards, 'ALL')).toEqual(cards)
     expect(filterByPartOfSpeech(cards, 'NOUN').map(card => card.id)).toEqual([1, 2])
     expect(searchCards(filterByPartOfSpeech(filterCards(cards, 'B', true), 'verb'), 'หนังสือ').map(card => card.id)).toEqual([3])
+  })
+
+  it('finds every meaning and part of a grouped word', () => {
+    const run: Card = { id: 4, word: 'Run', partOfSpeech: 'verb, noun', meaning: 'วิ่ง, การวิ่ง', partsOfSpeech: ['verb', 'noun'], meanings: ['วิ่ง', 'การวิ่ง'], hint: '', needsReview: false }
+    expect(filterByPartOfSpeech([run], 'NOUN')).toEqual([run])
+    expect(searchCards([run], 'การวิ่ง')).toEqual([run])
+    expect(shuffleCards([run]).map(card => card.word)).toEqual(['Run'])
   })
 
   it('shuffles without changing the source or repeating a card', () => {
