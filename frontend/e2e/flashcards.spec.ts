@@ -263,6 +263,7 @@ test('groups a word with multiple parts and asks its spelling once per challenge
   await page.getByRole('option', { name: 'noun', exact: true }).click()
   await page.getByLabel('ความหมายภาษาไทย').fill('วิ่ง\nการวิ่ง')
   await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).last().click()
+  await expect(page.getByRole('dialog')).toBeHidden()
 
   let entries = await (await request.get(`${api}/cards`)).json() as { word: string; partsOfSpeech: string[]; meanings: string[] }[]
   expect(entries).toHaveLength(1)
