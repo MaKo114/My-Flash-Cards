@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { api } from '@/lib/api'
+import { readCachedCards, writeCachedCards } from '@/lib/card-cache'
 import { playAnswerSound } from '@/lib/answer-sound'
 import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportResult } from '@/lib/cards'
 
@@ -167,8 +168,10 @@ function ChallengePanel({ card, mode, firstLanguage, soundEffects, onToggleSound
 }
 
 export default function App() {
-  const [cards, setCards] = useState<Card[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialCards] = useState(readCachedCards)
+  const [cards, setCards] = useState<Card[]>(() => initialCards ?? [])
+  const [loading, setLoading] = useState(initialCards === null)
+  const [hasSnapshot, setHasSnapshot] = useState(initialCards !== null)
   const [error, setError] = useState('')
   const [view, setView] = useState<'library' | 'study' | 'challenge'>('library')
   const [letter, setLetter] = useState('ALL')
@@ -196,13 +199,26 @@ export default function App() {
   const [deletingSelected, setDeletingSelected] = useState(false)
   const [reviewSaving, setReviewSaving] = useState<Set<number>>(() => new Set())
   const reviewInFlight = useRef<Set<number>>(new Set())
+  const changedSinceFetch = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function updateCards(value: React.SetStateAction<Card[]>) {
+    changedSinceFetch.current = true
+    setCards(value)
+  }
 
   useEffect(() => {
     let active = true
-    api.list().then(value => { if (active) setCards(value) }).catch(cause => { if (active) setError(cause.message) }).finally(() => { if (active) setLoading(false) })
+    api.list().then(value => {
+      if (active) {
+        if (!changedSinceFetch.current) setCards(value)
+        setHasSnapshot(true)
+      }
+    }).catch(cause => { if (active) setError(cause.message) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
+
+  useEffect(() => { if (hasSnapshot) writeCachedCards(cards) }, [cards, hasSnapshot])
 
   const filtered = useMemo(() => filterCards(cards, letter, reviewOnly), [cards, letter, reviewOnly])
   const partOptions = useMemo(() => [...new Set([...cards.flatMap(card => card.partsOfSpeech.map(part => part.trim().toLowerCase())), ...(partFilter === 'ALL' ? [] : [partFilter])])].filter(Boolean).sort(), [cards, partFilter])
@@ -243,7 +259,7 @@ export default function App() {
 
   async function save(fields: CardFields) {
     const saved = editing ? await api.update(editing.id, fields) : await api.create(fields)
-    setCards(previous => editing ? previous.map(card => card.id === saved.id ? saved : card).sort(sortCards) : [...previous, saved].sort(sortCards))
+    updateCards(previous => editing ? previous.map(card => card.id === saved.id ? saved : card).sort(sortCards) : [...previous, saved].sort(sortCards))
     setEditorOpen(false)
     setError('')
   }
@@ -253,13 +269,13 @@ export default function App() {
     reviewInFlight.current.add(card.id)
     setReviewSaving(previous => new Set(previous).add(card.id))
     const nextNeedsReview = !card.needsReview
-    setCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: nextNeedsReview } : item))
+    updateCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: nextNeedsReview } : item))
     if (reviewOnly && card.needsReview) { setFlipped(false); setHintVisible(false) }
     try {
       const saved = await api.review(card.id, nextNeedsReview)
-      setCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: saved.needsReview } : item))
+      updateCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: saved.needsReview } : item))
     } catch (cause) {
-      setCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: card.needsReview } : item))
+      updateCards(previous => previous.map(item => item.id === card.id ? { ...item, needsReview: card.needsReview } : item))
       setError(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
     } finally {
       reviewInFlight.current.delete(card.id)
@@ -272,7 +288,7 @@ export default function App() {
     const needsReview = !remembered
     if (challengeCard.needsReview !== needsReview) {
       const saved = await api.review(challengeCard.id, needsReview)
-      setCards(previous => previous.map(card => card.id === saved.id ? saved : card))
+      updateCards(previous => previous.map(card => card.id === saved.id ? saved : card))
     }
     if (remembered) setRememberedCount(value => value + 1)
     else setMissedCount(value => value + 1)
@@ -282,7 +298,7 @@ export default function App() {
 
   async function remove(card: Card) {
     if (!window.confirm(`ลบคำว่า “${card.word}” ใช่ไหม?`)) return
-    try { await api.delete(card.id); setCards(previous => previous.filter(item => item.id !== card.id)); setError('') }
+    try { await api.delete(card.id); updateCards(previous => previous.filter(item => item.id !== card.id)); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'ลบไม่สำเร็จ') }
   }
 
@@ -313,7 +329,7 @@ export default function App() {
     setDeletingSelected(true)
     const results = await Promise.allSettled(ids.map(id => api.delete(id)))
     const deleted = new Set(ids.filter((_, index) => results[index].status === 'fulfilled'))
-    setCards(previous => previous.filter(card => !deleted.has(card.id)))
+    updateCards(previous => previous.filter(card => !deleted.has(card.id)))
     setSelectedIds(previous => new Set([...previous].filter(id => !deleted.has(id))))
     const failures = ids.length - deleted.size
     setError(failures ? `ลบไม่สำเร็จ ${failures} คำ กรุณาลองอีกครั้ง` : '')
@@ -324,7 +340,7 @@ export default function App() {
     try {
       const result = await api.import(file)
       const updated = await api.list()
-      setCards(updated); setImportResult(result); setError('')
+      updateCards(updated); setImportResult(result); setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'นำเข้าไม่สำเร็จ') }
   }
 

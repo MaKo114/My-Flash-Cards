@@ -79,11 +79,25 @@ func TestGroupLegacyCardsMigration(t *testing.T) {
 	if len(cards[0].PartsOfSpeech) != 2 || len(cards[0].Meanings) != 3 {
 		t.Fatalf("legacy comma-separated values were not preserved: %#v", cards[0])
 	}
+	if err := repo.ApplyImport(ctx, []domain.ImportWrite{
+		{Fields: domain.Fields{Word: "Fresh", PartOfSpeech: "noun", Meaning: "new", PartsOfSpeech: []string{"noun"}, Meanings: []string{"new"}}},
+		{Fields: domain.Fields{Word: "Run", PartOfSpeech: "noun", Meaning: "duplicate", PartsOfSpeech: []string{"noun"}, Meanings: []string{"duplicate"}}},
+	}); !errors.Is(err, domain.ErrDuplicate) {
+		t.Fatalf("expected duplicate to roll back import, got %v", err)
+	}
+	cards, err = repo.List(ctx)
+	if err != nil || len(cards) != 2 {
+		t.Fatalf("failed import committed partial rows: %#v, %v", cards, err)
+	}
 	if _, err := repo.Create(ctx, domain.Fields{Word: "run", PartOfSpeech: "adverb", Meaning: "อย่างรวดเร็ว", PartsOfSpeech: []string{"adverb"}, Meanings: []string{"อย่างรวดเร็ว"}}); !errors.Is(err, domain.ErrDuplicate) {
 		t.Fatalf("expected one card per word, got %v", err)
 	}
 	if err := runMigrations(ctx, pool); err != nil {
 		t.Fatalf("migration must be repeatable: %v", err)
+	}
+	var appliedCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&appliedCount); err != nil || appliedCount != 3 {
+		t.Fatalf("expected three recorded migrations, got %d, %v", appliedCount, err)
 	}
 	if err := repo.Delete(ctx, cards[1].ID); err != nil {
 		t.Fatal(err)

@@ -3,8 +3,10 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"my-flash-cards/backend/internal/domain"
 )
@@ -35,6 +37,69 @@ func (m *memoryRepo) Update(_ context.Context, id int64, fields domain.Fields) (
 }
 func (*memoryRepo) SetReview(context.Context, int64, bool) (domain.Card, error) { panic("unused") }
 func (*memoryRepo) Delete(context.Context, int64) error                         { panic("unused") }
+func (m *memoryRepo) ApplyImport(ctx context.Context, writes []domain.ImportWrite) error {
+	copyRepo := &memoryRepo{cards: append([]domain.Card(nil), m.cards...)}
+	for _, write := range writes {
+		if write.ID == 0 {
+			if _, err := copyRepo.Create(ctx, write.Fields); err != nil {
+				return err
+			}
+		} else if _, err := copyRepo.Update(ctx, write.ID, write.Fields); err != nil {
+			return err
+		}
+	}
+	m.cards = copyRepo.cards
+	return nil
+}
+
+type delayedRepo struct{ *memoryRepo }
+
+func (*delayedRepo) wait(ctx context.Context) error {
+	select {
+	case <-time.After(20 * time.Millisecond):
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (r *delayedRepo) Create(ctx context.Context, fields domain.Fields) (domain.Card, error) {
+	if err := r.wait(ctx); err != nil {
+		return domain.Card{}, err
+	}
+	return r.memoryRepo.Create(ctx, fields)
+}
+
+func (r *delayedRepo) ApplyImport(ctx context.Context, writes []domain.ImportWrite) error {
+	if err := r.wait(ctx); err != nil {
+		return err
+	}
+	for _, write := range writes {
+		if write.ID == 0 {
+			if _, err := r.memoryRepo.Create(ctx, write.Fields); err != nil {
+				return err
+			}
+		} else if _, err := r.memoryRepo.Update(ctx, write.ID, write.Fields); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestImportCompletesWithOneDatabaseRoundTrip(t *testing.T) {
+	repo := &delayedRepo{memoryRepo: &memoryRepo{}}
+	var csv strings.Builder
+	csv.WriteString("คำศัพท์,ชนิดของคำ,ความหมาย\n")
+	for i := 0; i < 10; i++ {
+		fmt.Fprintf(&csv, "word%d,noun,ความหมาย%d\n", i, i)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	result, err := New(repo).Import(ctx, strings.NewReader(csv.String()))
+	if err != nil || result.Added != 10 || len(repo.cards) != 10 {
+		t.Fatalf("import should finish without partial writes: result=%#v, cards=%d, err=%v", result, len(repo.cards), err)
+	}
+}
 
 func TestImportReportsDuplicatesAndInvalidRows(t *testing.T) {
 	repo := &memoryRepo{}
@@ -55,6 +120,18 @@ func TestImportReportsDuplicatesAndInvalidRows(t *testing.T) {
 	}
 	if len(repo.cards[0].PartsOfSpeech) != 2 || len(repo.cards[0].Meanings) != 3 {
 		t.Fatalf("repeated word was not merged: %#v", repo.cards[0])
+	}
+}
+
+func TestImportAcceptsSpacedQuotesAndUnquotedMeaningCommas(t *testing.T) {
+	repo := &memoryRepo{}
+	input := "คำศัพท์,ชนิดของคำ,ความหมาย\nabandon, verb, ละทิ้ง, ทอดทิ้ง\nabout, \"adverb, preposition\", \"ประมาณ, รอบๆ, เกี่ยวกับ\"\n"
+	result, err := New(repo).Import(context.Background(), strings.NewReader(input))
+	if err != nil || result.Added != 2 || result.Invalid != 0 {
+		t.Fatalf("unexpected result for common CSV formatting: %#v, %v", result, err)
+	}
+	if len(repo.cards) != 2 || len(repo.cards[0].Meanings) != 2 || len(repo.cards[1].PartsOfSpeech) != 2 || len(repo.cards[1].Meanings) != 3 {
+		t.Fatalf("CSV values were not split correctly: %#v", repo.cards)
 	}
 }
 

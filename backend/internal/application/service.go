@@ -17,6 +17,7 @@ type Repository interface {
 	List(context.Context) ([]domain.Card, error)
 	Create(context.Context, domain.Fields) (domain.Card, error)
 	Update(context.Context, int64, domain.Fields) (domain.Card, error)
+	ApplyImport(context.Context, []domain.ImportWrite) error
 	SetReview(context.Context, int64, bool) (domain.Card, error)
 	Delete(context.Context, int64) error
 }
@@ -76,6 +77,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 	}
 	reader := csv.NewReader(bytes.NewReader(raw))
 	reader.FieldsPerRecord = -1
+	reader.TrimLeadingSpace = true
 	header, err := reader.Read()
 	if err != nil {
 		return result, ErrCSVHeader
@@ -98,6 +100,8 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 	for _, card := range existing {
 		byWord[strings.ToLower(card.Word)] = card
 	}
+	writes := make(map[string]domain.ImportWrite)
+	var writeOrder []string
 	for row := 2; ; row++ {
 		record, readErr := reader.Read()
 		if readErr == io.EOF {
@@ -111,7 +115,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		if len(record) == 1 && strings.TrimSpace(record[0]) == "" {
 			continue
 		}
-		if len(record) != 3 {
+		if len(record) < 3 {
 			result.Invalid++
 			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ต้องมีข้อมูล 3 คอลัมน์"})
 			continue
@@ -119,7 +123,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		fields := domain.Fields{
 			Word:          record[0],
 			PartsOfSpeech: strings.Split(record[1], ","),
-			Meanings:      strings.Split(record[2], ","),
+			Meanings:      strings.Split(strings.Join(record[2:], ","), ","),
 		}
 		clean, cleanErr := fields.Clean()
 		if cleanErr != nil {
@@ -127,7 +131,8 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ข้อมูลไม่ครบ"})
 			continue
 		}
-		old, exists := byWord[strings.ToLower(clean.Word)]
+		key := strings.ToLower(clean.Word)
+		old, exists := byWord[key]
 		if exists {
 			parts, partsChanged := appendUnique(old.PartsOfSpeech, clean.PartsOfSpeech)
 			meanings, meaningsChanged := appendUnique(old.Meanings, clean.Meanings)
@@ -135,23 +140,32 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 				result.Skipped++
 				continue
 			}
-			updated, updateErr := s.Update(ctx, old.ID, domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint})
-			if updateErr != nil {
-				return result, fmt.Errorf("import row %d: %w", row, updateErr)
+			fields, cleanErr := (domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint}).Clean()
+			if cleanErr != nil {
+				return result, fmt.Errorf("import row %d: %w", row, cleanErr)
 			}
-			byWord[strings.ToLower(clean.Word)] = updated
+			old.PartOfSpeech, old.Meaning = fields.PartOfSpeech, fields.Meaning
+			old.PartsOfSpeech, old.Meanings = fields.PartsOfSpeech, fields.Meanings
+			byWord[key] = old
+			if _, queued := writes[key]; !queued {
+				writeOrder = append(writeOrder, key)
+			}
+			writes[key] = domain.ImportWrite{ID: old.ID, Fields: fields}
 			result.Merged++
 			continue
 		}
-		created, err := s.Create(ctx, clean)
-		switch {
-		case err == nil:
-			byWord[strings.ToLower(clean.Word)] = created
-			result.Added++
-		case errors.Is(err, domain.ErrDuplicate):
-			result.Skipped++
-		default:
-			return result, fmt.Errorf("import row %d: %w", row, err)
+		byWord[key] = domain.Card{Word: clean.Word, PartOfSpeech: clean.PartOfSpeech, Meaning: clean.Meaning, PartsOfSpeech: clean.PartsOfSpeech, Meanings: clean.Meanings}
+		writes[key] = domain.ImportWrite{Fields: clean}
+		writeOrder = append(writeOrder, key)
+		result.Added++
+	}
+	if len(writeOrder) > 0 {
+		ordered := make([]domain.ImportWrite, 0, len(writeOrder))
+		for _, key := range writeOrder {
+			ordered = append(ordered, writes[key])
+		}
+		if err := s.repo.ApplyImport(ctx, ordered); err != nil {
+			return result, err
 		}
 	}
 	return result, nil

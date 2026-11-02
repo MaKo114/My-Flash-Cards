@@ -65,6 +65,44 @@ func (r *Repository) Update(ctx context.Context, id int64, fields domain.Fields)
 		id, fields.Word, fields.PartOfSpeech, fields.Meaning, fields.PartsOfSpeech, fields.Meanings, fields.Hint))
 }
 
+func (r *Repository) ApplyImport(ctx context.Context, writes []domain.ImportWrite) error {
+	if len(writes) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var batch pgx.Batch
+	for _, write := range writes {
+		f := write.Fields
+		if write.ID == 0 {
+			batch.Queue("INSERT INTO cards (word, part_of_speech, meaning, parts_of_speech, meanings, hint) VALUES ($1,$2,$3,$4,$5,$6)",
+				f.Word, f.PartOfSpeech, f.Meaning, f.PartsOfSpeech, f.Meanings, f.Hint)
+		} else {
+			batch.Queue("UPDATE cards SET word=$2, part_of_speech=$3, meaning=$4, parts_of_speech=$5, meanings=$6, hint=$7, updated_at=now() WHERE id=$1",
+				write.ID, f.Word, f.PartOfSpeech, f.Meaning, f.PartsOfSpeech, f.Meanings, f.Hint)
+		}
+	}
+	results := tx.SendBatch(ctx, &batch)
+	for range writes {
+		tag, err := results.Exec()
+		if err != nil {
+			_ = results.Close()
+			return translate(err)
+		}
+		if tag.RowsAffected() != 1 {
+			_ = results.Close()
+			return domain.ErrNotFound
+		}
+	}
+	if err := results.Close(); err != nil {
+		return translate(err)
+	}
+	return translate(tx.Commit(ctx))
+}
+
 func (r *Repository) SetReview(ctx context.Context, id int64, value bool) (domain.Card, error) {
 	return scan(r.db.QueryRow(ctx,
 		"UPDATE cards SET needs_review=$2, updated_at=now() WHERE id=$1 RETURNING "+columns, id, value))

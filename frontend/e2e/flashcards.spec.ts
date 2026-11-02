@@ -304,3 +304,26 @@ test('groups a word with multiple parts and asks its spelling once per challenge
   await page.getByRole('button', { name: 'ดูเฉลย' }).click()
   await expect(page.getByText('ประมาณ, รอบๆ, เกี่ยวกับ', { exact: true })).toBeVisible()
 })
+
+test('imports a large CSV and safely skips it on retry', async ({ page, request }) => {
+  const existing = await request.get(`${api}/cards`)
+  for (const card of await existing.json() as { id: number }[]) {
+    expect((await request.delete(`${api}/cards/${card.id}`)).ok()).toBeTruthy()
+  }
+
+  const csv = 'คำศัพท์,ชนิดของคำ,ความหมาย\n' +
+    Array.from({ length: 199 }, (_, index) => index === 0
+      ? 'word0, "verb, noun", "ความหมาย0, อีกความหมาย0"'
+      : `word${index}, noun, ความหมาย${index}, อีกความหมาย${index}`).join('\n') + '\n'
+  const file = { name: 'large.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) }
+  await page.goto('/')
+  await page.locator('input[type="file"]').setInputFiles(file)
+  await expect(page.getByText('เพิ่ม 199 คำ · รวมข้อมูล 0 แถว · ข้ามคำซ้ำ 0 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 0 แถว')).toBeVisible()
+  const cards = await (await request.get(`${api}/cards`)).json() as { word: string; partsOfSpeech: string[]; meanings: string[] }[]
+  expect(cards).toHaveLength(199)
+  expect(cards.find(card => card.word === 'Word0')).toMatchObject({ partsOfSpeech: ['verb', 'noun'], meanings: ['ความหมาย0', 'อีกความหมาย0'] })
+
+  await page.locator('input[type="file"]').setInputFiles(file)
+  await expect(page.getByText('เพิ่ม 0 คำ · รวมข้อมูล 0 แถว · ข้ามคำซ้ำ 199 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 0 แถว')).toBeVisible()
+  expect((await (await request.get(`${api}/cards`)).json() as unknown[])).toHaveLength(199)
+})

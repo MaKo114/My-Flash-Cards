@@ -32,6 +32,11 @@ type Fields struct {
 	Hint          string   `json:"hint"`
 }
 
+type ImportWrite struct {
+	ID     int64
+	Fields Fields
+}
+
 func (f Fields) Clean() (Fields, error) {
 	f.Word = strings.TrimSpace(f.Word)
 	f.Hint = strings.TrimSpace(f.Hint)
