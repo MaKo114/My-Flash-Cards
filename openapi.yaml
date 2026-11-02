@@ -194,8 +194,14 @@ paths:
                 skipped: 1
                 invalid: 1
                 issues:
+                  - row: 4
+                    word: Run
+                    kind: skipped
+                    reason: ข้อมูลของคำนี้มีอยู่แล้ว
                   - row: 5
-                    reason: ข้อมูลไม่ครบ
+                    word: Bad
+                    kind: invalid
+                    reason: ไม่มีความหมาย
         '400':
           $ref: '#/components/responses/BadRequest'
         '413':
@@ -338,12 +344,19 @@ components:
         needsReview: false
     ImportIssue:
       type: object
-      required: [row, reason]
+      required: [row, kind, reason]
       properties:
         row:
           type: integer
           minimum: 2
           description: ลำดับแถวข้อมูลในไฟล์ (หัวคอลัมน์คือแถว 1)
+        word:
+          type: string
+          description: คำศัพท์ในแถว หากอ่านได้จากไฟล์
+        kind:
+          type: string
+          enum: [skipped, invalid]
+          description: ข้ามเพราะข้อมูลซ้ำ หรือข้อมูลผิดรูปแบบ/ไม่ครบ
         reason:
           type: string
     ImportResult:
@@ -368,6 +381,7 @@ components:
           description: จำนวนแถวผิดรูปแบบหรือข้อมูลไม่ครบ
         issues:
           type: array
+          description: รายการแถวที่ข้ามหรือผิดรูปแบบ พร้อมคำศัพท์และเหตุผล
           items:
             $ref: '#/components/schemas/ImportIssue'
     Error:

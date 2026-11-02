@@ -54,6 +54,8 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
     buffer: Buffer.from('\ufeffคำศัพท์,ชนิดของคำ,ความหมาย\napple,noun,ผลแอปเปิล\nant,noun,มด\nBad,verb,\n'),
   })
   await expect(page.getByText('เพิ่ม 1 คำ · รวมข้อมูล 0 แถว · ข้ามคำซ้ำ 1 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 1 แถว')).toBeVisible()
+  await expect(page.getByText('แถว 2 · Apple · ข้าม: ข้อมูลของคำนี้มีอยู่แล้ว')).toBeVisible()
+  await expect(page.getByText('แถว 4 · Bad · นำเข้าไม่ได้: ไม่มีความหมาย')).toBeVisible()
   const search = page.getByRole('textbox', { name: 'ค้นหาคำศัพท์' })
   await search.fill('หนังสือ')
   await expect(page.getByText('Book', { exact: true })).toBeVisible()

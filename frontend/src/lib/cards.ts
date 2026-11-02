@@ -16,8 +16,10 @@ export type ImportResult = {
   merged: number
   skipped: number
   invalid: number
-  issues: { row: number; reason: string }[]
+  issues: { row: number; word?: string; kind: 'skipped' | 'invalid'; reason: string }[]
 }
+
+export type ImportProgress = { phase: 'uploading' | 'processing' | 'refreshing'; percent: number }
 
 export function filterCards(cards: Card[], letter: string, reviewOnly: boolean) {
   return cards.filter(card =>

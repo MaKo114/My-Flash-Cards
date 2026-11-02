@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { readCachedCards, writeCachedCards } from '@/lib/card-cache'
 import { playAnswerSound } from '@/lib/answer-sound'
-import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportResult } from '@/lib/cards'
+import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportProgress, type ImportResult } from '@/lib/cards'
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const partsOfSpeech = ['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'determiner', 'phrase']
@@ -76,9 +76,20 @@ function CardEditor({ card, onCancel, onSave }: { card: Card | null; onCancel: (
 }
 
 function ImportNotice({ result, onClose }: { result: ImportResult; onClose: () => void }) {
-  return <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50/60 p-4 text-sm text-slate-700" role="status">
-    <div className="flex items-start justify-between gap-2"><div><p className="font-bold text-slate-900">นำเข้า CSV เสร็จแล้ว</p><p className="mt-1">เพิ่ม {result.added} คำ · รวมข้อมูล {result.merged} แถว · ข้ามคำซ้ำ {result.skipped} แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ {result.invalid} แถว</p></div><button onClick={onClose} aria-label="ปิดผลนำเข้า" className="text-slate-500"><X size={18} /></button></div>
-    {result.issues.length > 0 && <ul className="mt-3 space-y-1 border-t border-teal-100 pt-3 text-red-700">{result.issues.map((issue, index) => <li key={index}>แถว {issue.row}: {issue.reason}</li>)}</ul>}
+  return <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50/60 p-4 text-sm text-slate-700">
+    <div className="flex items-start justify-between gap-2"><div role="status"><p className="font-bold text-slate-900">นำเข้า CSV เสร็จแล้ว</p><p className="mt-1">เพิ่ม {result.added} คำ · รวมข้อมูล {result.merged} แถว · ข้ามคำซ้ำ {result.skipped} แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ {result.invalid} แถว</p></div><button onClick={onClose} aria-label="ปิดผลนำเข้า" className="text-slate-500"><X size={18} /></button></div>
+    {result.issues.length > 0 && <details className="mt-3 border-t border-teal-100 pt-3" open={result.invalid > 0}>
+      <summary className="cursor-pointer font-semibold text-teal-800">ดูรายการที่ไม่ได้เพิ่ม ({result.issues.length})</summary>
+      <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-2">{result.issues.map((issue, index) => <li key={index} className={`rounded-lg bg-white px-3 py-2 ${issue.kind === 'skipped' ? 'text-slate-600' : 'text-red-700'}`}>แถว {issue.row} · {issue.word || 'ไม่ระบุคำศัพท์'} · {issue.kind === 'skipped' ? 'ข้าม' : 'นำเข้าไม่ได้'}: {issue.reason}</li>)}</ul>
+    </details>}
+  </div>
+}
+
+function ImportProgressNotice({ fileName, progress }: { fileName: string; progress: ImportProgress }) {
+  const label = progress.phase === 'uploading' ? `กำลังอัปโหลด CSV ${progress.percent}%` : progress.phase === 'processing' ? 'กำลังตรวจและบันทึกคำศัพท์' : 'กำลังโหลดรายการคำศัพท์ล่าสุด'
+  return <div className="mb-6 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm" aria-busy="true">
+    <div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate text-xs font-medium text-slate-500">{fileName}</p><p role="status" className="mt-1 text-sm font-semibold text-teal-800">{label}</p></div><FileUp size={20} className="shrink-0 text-teal-700" /></div>
+    <div role="progressbar" aria-label="ความคืบหน้าการนำเข้า CSV" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.phase === 'uploading' ? progress.percent : undefined} className="mt-3 h-2 overflow-hidden rounded-full bg-teal-100"><div className={`h-full rounded-full bg-teal-600 transition-[width] ${progress.phase === 'uploading' ? '' : 'animate-pulse'}`} style={{ width: progress.phase === 'uploading' ? `${progress.percent}%` : '100%' }} /></div>
   </div>
 }
 
@@ -195,12 +206,14 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Card | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importState, setImportState] = useState<{ fileName: string; progress: ImportProgress } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
   const [deletingSelected, setDeletingSelected] = useState(false)
   const [reviewSaving, setReviewSaving] = useState<Set<number>>(() => new Set())
   const reviewInFlight = useRef<Set<number>>(new Set())
   const changedSinceFetch = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const importing = useRef(false)
 
   function updateCards(value: React.SetStateAction<Card[]>) {
     changedSinceFetch.current = true
@@ -337,11 +350,27 @@ export default function App() {
   }
 
   async function importFile(file: File) {
+    if (importing.current) return
+    importing.current = true
+    setImportResult(null)
+    setError('')
+    setImportState({ fileName: file.name, progress: { phase: 'uploading', percent: 0 } })
     try {
-      const result = await api.import(file)
-      const updated = await api.list()
-      updateCards(updated); setImportResult(result); setError('')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'นำเข้าไม่สำเร็จ') }
+      const result = await api.import(file, progress => setImportState({ fileName: file.name, progress }))
+      setImportResult(result)
+      setImportState({ fileName: file.name, progress: { phase: 'refreshing', percent: 100 } })
+      try {
+        const updated = await api.list()
+        updateCards(updated)
+      } catch {
+        setError('นำเข้าแล้ว แต่โหลดรายการคำศัพท์ล่าสุดไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ')
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'นำเข้าไม่สำเร็จ')
+    } finally {
+      importing.current = false
+      setImportState(null)
+    }
   }
 
   return <div className="min-h-screen bg-[#f4f8f7] text-slate-700">
@@ -365,7 +394,8 @@ export default function App() {
         <div className="mx-auto min-h-[calc(100dvh-5rem)] w-full max-w-6xl px-5 py-6 lg:px-10 lg:py-8">
           {error && <div role="alert" className="mb-6 flex items-start justify-between rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span><button aria-label="ปิดข้อความผิดพลาด" onClick={() => setError('')}><X size={18} /></button></div>}
           {loading ? <p role="status" className="py-20 text-center text-slate-500">กำลังโหลดคำศัพท์...</p> : view === 'library' ? <>
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-teal-700">YOUR COLLECTION</p><h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">คำศัพท์ทั้งหมด</h2><p className="mt-2 text-sm text-slate-500">เก็บทุกคำใหม่ไว้ที่นี่ แล้วกลับมาทบทวนได้เสมอ</p></div><div><input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" aria-label="เลือกไฟล์ CSV" onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} /><Button variant="secondary" onClick={() => fileRef.current?.click()}><FileUp size={17} /> นำเข้า CSV</Button></div></div>
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-teal-700">YOUR COLLECTION</p><h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">คำศัพท์ทั้งหมด</h2><p className="mt-2 text-sm text-slate-500">เก็บทุกคำใหม่ไว้ที่นี่ แล้วกลับมาทบทวนได้เสมอ</p></div><div><input ref={fileRef} type="file" accept=".csv,text/csv" disabled={importState !== null} className="hidden" aria-label="เลือกไฟล์ CSV" onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} /><Button variant="secondary" disabled={importState !== null} onClick={() => fileRef.current?.click()}><FileUp size={17} /> นำเข้า CSV</Button></div></div>
+            {importState && <ImportProgressNotice fileName={importState.fileName} progress={importState.progress} />}
             {importResult && <ImportNotice result={importResult} onClose={() => setImportResult(null)} />}
             <div className="mb-7 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-teal-50 p-2.5 text-teal-700"><BookOpen size={20} /></div><span className="text-sm font-medium text-slate-500">คำศัพท์ทั้งหมด</span></div><p className="mt-3 text-3xl font-bold text-slate-900">{cards.length}<span className="ml-2 text-sm font-medium text-slate-400">คำ</span></p></div><div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-amber-50 p-2.5 text-amber-500"><Star size={20} /></div><span className="text-sm font-medium text-slate-500">ต้องทบทวน</span></div><p className="mt-3 text-3xl font-bold text-slate-900">{reviewCount}<span className="ml-2 text-sm font-medium text-slate-400">คำ</span></p></div></div>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">

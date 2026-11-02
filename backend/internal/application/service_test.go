@@ -112,7 +112,7 @@ func TestImportReportsDuplicatesAndInvalidRows(t *testing.T) {
 	if result.Added != 3 || result.Merged != 2 || result.Skipped != 1 || result.Invalid != 1 {
 		t.Fatalf("unexpected summary: %#v", result)
 	}
-	if len(result.Issues) != 1 || result.Issues[0].Row != 6 {
+	if len(result.Issues) != 2 || result.Issues[0].Row != 5 || result.Issues[0].Word != "Run" || result.Issues[0].Kind != "skipped" || result.Issues[1].Row != 6 || result.Issues[1].Word != "bad" || result.Issues[1].Kind != "invalid" || result.Issues[1].Reason != "ไม่มีความหมาย" {
 		t.Fatalf("unexpected issues: %#v", result.Issues)
 	}
 	if repo.cards[1].Word != "Two, words" || len(repo.cards[2].PartsOfSpeech) != 2 || len(repo.cards[2].Meanings) != 3 {

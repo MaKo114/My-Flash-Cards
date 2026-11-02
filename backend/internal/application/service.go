@@ -52,6 +52,8 @@ func (s *Service) Delete(ctx context.Context, id int64) error { return s.repo.De
 
 type ImportIssue struct {
 	Row    int    `json:"row"`
+	Word   string `json:"word,omitempty"`
+	Kind   string `json:"kind"`
 	Reason string `json:"reason"`
 }
 
@@ -109,7 +111,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		}
 		if readErr != nil {
 			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "รูปแบบ CSV ไม่ถูกต้อง"})
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: "รูปแบบ CSV ไม่ถูกต้อง"})
 			continue
 		}
 		if len(record) == 1 && strings.TrimSpace(record[0]) == "" {
@@ -117,7 +119,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		}
 		if len(record) < 3 {
 			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ต้องมีข้อมูล 3 คอลัมน์"})
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: "ต้องมีข้อมูล 3 คอลัมน์"})
 			continue
 		}
 		fields := domain.Fields{
@@ -128,7 +130,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		clean, cleanErr := fields.Clean()
 		if cleanErr != nil {
 			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Reason: "ข้อมูลไม่ครบ"})
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: importInvalidReason(record)})
 			continue
 		}
 		key := strings.ToLower(clean.Word)
@@ -138,6 +140,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 			meanings, meaningsChanged := appendUnique(old.Meanings, clean.Meanings)
 			if !partsChanged && !meaningsChanged {
 				result.Skipped++
+				result.Issues = append(result.Issues, ImportIssue{Row: row, Word: clean.Word, Kind: "skipped", Reason: "ข้อมูลของคำนี้มีอยู่แล้ว"})
 				continue
 			}
 			fields, cleanErr := (domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint}).Clean()
@@ -169,6 +172,30 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		}
 	}
 	return result, nil
+}
+
+func importWord(record []string) string {
+	if len(record) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(record[0])
+}
+
+func importInvalidReason(record []string) string {
+	if strings.TrimSpace(record[0]) == "" {
+		return "ไม่มีคำศัพท์"
+	}
+	for _, part := range strings.Split(record[1], ",") {
+		if strings.TrimSpace(part) == "" {
+			return "ไม่มีชนิดของคำ"
+		}
+	}
+	for _, meaning := range strings.Split(strings.Join(record[2:], ","), ",") {
+		if strings.TrimSpace(meaning) == "" {
+			return "ไม่มีความหมาย"
+		}
+	}
+	return "ข้อมูลไม่ครบ"
 }
 
 func appendUnique(existing, incoming []string) ([]string, bool) {
