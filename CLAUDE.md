@@ -11,7 +11,7 @@
 
 ## Stack
 
-- `frontend/`: React + Vite + TypeScript, Tailwind v4, คอมโพเนนต์แบบ shadcn ใน `src/components/ui`, ไอคอน lucide-react UI ส่วนใหญ่อยู่ใน `src/App.tsx` ฟังก์ชันล้วนอยู่ใน `src/lib/cards.ts`
+- `frontend/`: React + Vite + TypeScript, Tailwind v4, คอมโพเนนต์แบบ shadcn ใน `src/components/ui`, ไอคอน lucide-react UI ส่วนใหญ่อยู่ใน `src/App.tsx` (หน้าสถิติ หน้าเข้าสู่ระบบ และแถวที่ปัดได้แยกอยู่ใน `src/components/`) ฟังก์ชันล้วนอยู่ใน `src/lib/cards.ts`
 - `backend/`: Go + Fiber v3 แบบ clean architecture ตาราง/migration สร้างตอน server เริ่ม
 - PostgreSQL ผ่าน `compose.yaml`: `db` พอร์ต 5432 (ใช้งานจริง), `db-test` พอร์ต 5433 (e2e เท่านั้น)
 
@@ -29,7 +29,9 @@ npm run build
 cd ../backend && go test ./...
 ```
 
-e2e ล้างข้อมูลในฐาน `flashcards_test` เอง ไม่แตะฐานใช้งานจริง
+e2e ล้างข้อมูลในฐาน `flashcards_test` เอง ไม่แตะฐานใช้งานจริง และรันทีละไฟล์ (`workers: 1`) เพราะทุกไฟล์ใช้ฐานทดสอบร่วมกัน ประวัติการฝึก (`study_log`) ไม่ถูกล้าง test ที่ดูสถิติจึงต้องเทียบกับค่าก่อนเริ่ม
+
+ตั้ง `APP_PASSWORD` ให้ backend เพื่อเปิดระบบรหัสผ่าน ถ้าไม่ตั้ง (ค่าปกติตอน dev และ e2e) API จะเปิดโดยไม่ต้องเข้าสู่ระบบ
 
 ## ข้อควรระวัง
 

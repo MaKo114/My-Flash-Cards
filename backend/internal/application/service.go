@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"my-flash-cards/backend/internal/domain"
@@ -20,6 +21,8 @@ type Repository interface {
 	ApplyImport(context.Context, []domain.ImportWrite) error
 	SetReview(context.Context, int64, bool) (domain.Card, error)
 	Delete(context.Context, int64) error
+	RecordAnswer(context.Context, int64, bool, time.Time) (domain.Card, error)
+	StudyDays(context.Context) ([]domain.StudyDay, error)
 }
 
 type Service struct{ repo Repository }
@@ -50,6 +53,19 @@ func (s *Service) SetReview(ctx context.Context, id int64, value bool) (domain.C
 
 func (s *Service) Delete(ctx context.Context, id int64) error { return s.repo.Delete(ctx, id) }
 
+// Answer records a challenge answer given on the learner's local day (YYYY-MM-DD).
+func (s *Service) Answer(ctx context.Context, id int64, correct bool, day string) (domain.Card, error) {
+	today, err := domain.ParseDay(day, time.Now())
+	if err != nil {
+		return domain.Card{}, err
+	}
+	return s.repo.RecordAnswer(ctx, id, correct, today)
+}
+
+func (s *Service) StudyDays(ctx context.Context) ([]domain.StudyDay, error) {
+	return s.repo.StudyDays(ctx)
+}
+
 type ImportIssue struct {
 	Row    int    `json:"row"`
 	Word   string `json:"word,omitempty"`
@@ -65,7 +81,7 @@ type ImportResult struct {
 	Issues  []ImportIssue `json:"issues"`
 }
 
-var ErrCSVHeader = errors.New("CSV ต้องมีหัวคอลัมน์ คำศัพท์,ชนิดของคำ,ความหมาย ตามลำดับ")
+var ErrCSVHeader = errors.New("CSV ต้องมีหัวคอลัมน์ คำศัพท์,ชนิดของคำ,ความหมาย ตามลำดับ (เพิ่ม คำใบ้,ตัวอย่างประโยค ต่อท้ายได้)")
 var ErrCSVEncoding = errors.New("CSV ต้องเข้ารหัสแบบ UTF-8")
 
 func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, error) {
@@ -84,11 +100,13 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 	if err != nil {
 		return result, ErrCSVHeader
 	}
-	if len(header) != 3 {
+	// The short format lets meanings spill over unquoted commas; the full format (from export) has fixed columns.
+	full := len(header) == 5
+	if len(header) != 3 && !full {
 		return result, ErrCSVHeader
 	}
 	header[0] = strings.TrimPrefix(header[0], "\ufeff")
-	want := []string{"คำศัพท์", "ชนิดของคำ", "ความหมาย"}
+	want := []string{"คำศัพท์", "ชนิดของคำ", "ความหมาย", "คำใบ้", "ตัวอย่างประโยค"}[:len(header)]
 	for i := range want {
 		if strings.TrimSpace(header[i]) != want[i] {
 			return result, ErrCSVHeader
@@ -117,9 +135,9 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 		if len(record) == 1 && strings.TrimSpace(record[0]) == "" {
 			continue
 		}
-		if len(record) < 3 {
+		if len(record) < 3 || (full && len(record) != 5) {
 			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: "ต้องมีข้อมูล 3 คอลัมน์"})
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: fmt.Sprintf("ต้องมีข้อมูล %d คอลัมน์", len(header))})
 			continue
 		}
 		fields := domain.Fields{
@@ -127,10 +145,14 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 			PartsOfSpeech: strings.Split(record[1], ","),
 			Meanings:      strings.Split(strings.Join(record[2:], ","), ","),
 		}
+		if full {
+			fields.Meanings = strings.Split(record[2], ",")
+			fields.Hint, fields.Example = record[3], record[4]
+		}
 		clean, cleanErr := fields.Clean()
 		if cleanErr != nil {
 			result.Invalid++
-			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: importInvalidReason(record)})
+			result.Issues = append(result.Issues, ImportIssue{Row: row, Word: importWord(record), Kind: "invalid", Reason: importInvalidReason(record, full)})
 			continue
 		}
 		key := strings.ToLower(clean.Word)
@@ -143,7 +165,7 @@ func (s *Service) Import(ctx context.Context, input io.Reader) (ImportResult, er
 				result.Issues = append(result.Issues, ImportIssue{Row: row, Word: clean.Word, Kind: "skipped", Reason: "ข้อมูลของคำนี้มีอยู่แล้ว"})
 				continue
 			}
-			fields, cleanErr := (domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint}).Clean()
+			fields, cleanErr := (domain.Fields{Word: old.Word, PartsOfSpeech: parts, Meanings: meanings, Hint: old.Hint, Example: old.Example}).Clean()
 			if cleanErr != nil {
 				return result, fmt.Errorf("import row %d: %w", row, cleanErr)
 			}
@@ -181,7 +203,11 @@ func importWord(record []string) string {
 	return strings.TrimSpace(record[0])
 }
 
-func importInvalidReason(record []string) string {
+func importInvalidReason(record []string, full bool) string {
+	meanings := record[2:]
+	if full {
+		meanings = record[2:3]
+	}
 	if strings.TrimSpace(record[0]) == "" {
 		return "ไม่มีคำศัพท์"
 	}
@@ -190,7 +216,7 @@ func importInvalidReason(record []string) string {
 			return "ไม่มีชนิดของคำ"
 		}
 	}
-	for _, meaning := range strings.Split(strings.Join(record[2:], ","), ",") {
+	for _, meaning := range strings.Split(strings.Join(meanings, ","), ",") {
 		if strings.TrimSpace(meaning) == "" {
 			return "ไม่มีความหมาย"
 		}

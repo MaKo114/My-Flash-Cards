@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -12,19 +13,114 @@ import (
 	"my-flash-cards/backend/internal/domain"
 )
 
-type Handler struct{ service *application.Service }
+type Handler struct {
+	service *application.Service
+	auth    *Auth
+}
 
-func New(service *application.Service) *Handler { return &Handler{service: service} }
+// New builds the API; a nil auth leaves every route open.
+func New(service *application.Service, auth *Auth) *Handler {
+	return &Handler{service: service, auth: auth}
+}
 
 func (h *Handler) Register(app *fiber.App) {
 	api := app.Group("/api")
 	api.Get("/health", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
+	api.Get("/session", h.session)
+	api.Post("/login", h.login)
+	// Routes registered after this middleware need a valid session when a password is set.
+	api.Use(h.requireAuth)
 	api.Get("/cards", h.list)
 	api.Post("/cards", h.create)
 	api.Put("/cards/:id", h.update)
 	api.Patch("/cards/:id/review", h.review)
 	api.Delete("/cards/:id", h.delete)
 	api.Post("/cards/import", h.importCSV)
+	api.Post("/cards/:id/answer", h.answer)
+	api.Get("/study-days", h.studyDays)
+}
+
+var errUnauthorized = errors.New("กรุณาเข้าสู่ระบบ")
+
+func bearer(c fiber.Ctx) string {
+	token, _ := strings.CutPrefix(c.Get(fiber.HeaderAuthorization), "Bearer ")
+	return token
+}
+
+// clientIP copies the address because Fiber reuses the memory behind header strings after the request.
+func clientIP(c fiber.Ctx) string {
+	return strings.Clone(rawClientIP(c))
+}
+
+func rawClientIP(c fiber.Ctx) string {
+	if forwarded := c.Get("X-Forwarded-For"); forwarded != "" {
+		first, _, _ := strings.Cut(forwarded, ",")
+		return strings.TrimSpace(first)
+	}
+	if real := c.Get("X-Real-IP"); real != "" {
+		return real
+	}
+	return c.IP()
+}
+
+func (h *Handler) requireAuth(c fiber.Ctx) error {
+	if h.auth == nil || h.auth.Valid(bearer(c), time.Now()) {
+		return c.Next()
+	}
+	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errUnauthorized.Error()})
+}
+
+func (h *Handler) session(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{"authRequired": h.auth != nil, "authenticated": h.auth == nil || h.auth.Valid(bearer(c), time.Now())})
+}
+
+func (h *Handler) login(c fiber.Ctx) error {
+	if h.auth == nil {
+		return c.JSON(fiber.Map{"token": ""})
+	}
+	now := time.Now()
+	ip := clientIP(c)
+	if h.auth.Blocked(ip, now) {
+		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่"})
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if json.Unmarshal(c.Body(), &body) != nil || !h.auth.Check(ip, body.Password, now) {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "รหัสผ่านไม่ถูกต้อง"})
+	}
+	return c.JSON(fiber.Map{"token": h.auth.Token(now)})
+}
+
+func (h *Handler) answer(c fiber.Ctx) error {
+	id, err := parseID(c)
+	if err != nil {
+		return respondError(c, err)
+	}
+	var body struct {
+		Correct *bool  `json:"correct"`
+		Today   string `json:"today"`
+	}
+	if json.Unmarshal(c.Body(), &body) != nil || body.Correct == nil {
+		return respondError(c, domain.ErrInvalid)
+	}
+	ctx, cancel := requestContext()
+	defer cancel()
+	card, err := h.service.Answer(ctx, id, *body.Correct, body.Today)
+	if err != nil {
+		return respondError(c, err)
+	}
+	return c.JSON(card)
+}
+
+func (h *Handler) studyDays(c fiber.Ctx) error {
+	ctx, cancel := requestContext()
+	defer cancel()
+	days, err := h.service.StudyDays(ctx)
+	if err != nil {
+		return respondError(c, err)
+	}
+	return c.JSON(days)
 }
 
 func requestContext() (context.Context, context.CancelFunc) {

@@ -8,6 +8,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 120_000,
   fullyParallel: false,
+  // Spec files share the one test database, so they must not run at the same time.
+  workers: 1,
   retries: 0,
   use: { baseURL: 'http://127.0.0.1:4173', browserName: 'chromium', headless: true },
   webServer: [
