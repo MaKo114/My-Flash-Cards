@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -20,7 +21,13 @@ type Card struct {
 	PartsOfSpeech []string `json:"partsOfSpeech"`
 	Meanings      []string `json:"meanings"`
 	Hint          string   `json:"hint"`
+	Example       string   `json:"example"`
 	NeedsReview   bool     `json:"needsReview"`
+	// SRSStep counts correct answers in a row; DueOn is the day the card should be reviewed (nil until first answered).
+	SRSStep      int     `json:"srsStep"`
+	DueOn        *string `json:"dueOn"`
+	CorrectCount int     `json:"correctCount"`
+	WrongCount   int     `json:"wrongCount"`
 }
 
 type Fields struct {
@@ -30,6 +37,7 @@ type Fields struct {
 	PartsOfSpeech []string `json:"partsOfSpeech"`
 	Meanings      []string `json:"meanings"`
 	Hint          string   `json:"hint"`
+	Example       string   `json:"example"`
 }
 
 type ImportWrite struct {
@@ -40,6 +48,7 @@ type ImportWrite struct {
 func (f Fields) Clean() (Fields, error) {
 	f.Word = strings.TrimSpace(f.Word)
 	f.Hint = strings.TrimSpace(f.Hint)
+	f.Example = strings.TrimSpace(f.Example)
 	if len(f.PartsOfSpeech) == 0 && f.PartOfSpeech != "" {
 		f.PartsOfSpeech = []string{f.PartOfSpeech}
 	}
@@ -81,4 +90,43 @@ func cleanList(values []string) ([]string, bool) {
 		}
 	}
 	return clean, true
+}
+
+// StudyDay summarizes the challenge answers given on one calendar day.
+type StudyDay struct {
+	Date    string `json:"date"`
+	Answers int    `json:"answers"`
+	Correct int    `json:"correct"`
+}
+
+const DayLayout = "2006-01-02"
+
+// ReviewIntervals are the days to wait after each correct answer in a row.
+var ReviewIntervals = []int{1, 3, 7, 14, 30, 60}
+
+// NextReview schedules a card after an answer given on today.
+// A wrong answer starts over and keeps the card due today; a correct one waits longer each time.
+func NextReview(step int, correct bool, today time.Time) (int, time.Time) {
+	if !correct {
+		return 0, today
+	}
+	if step < len(ReviewIntervals) {
+		step++
+	}
+	if step < 1 {
+		step = 1
+	}
+	return step, today.AddDate(0, 0, ReviewIntervals[step-1])
+}
+
+// ParseDay reads the learner's local date; an empty value falls back to the server's UTC date.
+func ParseDay(value string, now time.Time) (time.Time, error) {
+	if value == "" {
+		return time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC), nil
+	}
+	day, err := time.Parse(DayLayout, value)
+	if err != nil {
+		return time.Time{}, ErrInvalid
+	}
+	return day, nil
 }

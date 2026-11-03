@@ -20,7 +20,7 @@ func (m *memoryRepo) Create(_ context.Context, fields domain.Fields) (domain.Car
 			return domain.Card{}, domain.ErrDuplicate
 		}
 	}
-	card := domain.Card{ID: int64(len(m.cards) + 1), Word: fields.Word, PartOfSpeech: fields.PartOfSpeech, Meaning: fields.Meaning, PartsOfSpeech: fields.PartsOfSpeech, Meanings: fields.Meanings, Hint: fields.Hint}
+	card := domain.Card{ID: int64(len(m.cards) + 1), Word: fields.Word, PartOfSpeech: fields.PartOfSpeech, Meaning: fields.Meaning, PartsOfSpeech: fields.PartsOfSpeech, Meanings: fields.Meanings, Hint: fields.Hint, Example: fields.Example}
 	m.cards = append(m.cards, card)
 	return card, nil
 }
@@ -28,7 +28,7 @@ func (m *memoryRepo) Update(_ context.Context, id int64, fields domain.Fields) (
 	for index, card := range m.cards {
 		if card.ID == id {
 			card.Word, card.PartOfSpeech, card.Meaning = fields.Word, fields.PartOfSpeech, fields.Meaning
-			card.PartsOfSpeech, card.Meanings, card.Hint = fields.PartsOfSpeech, fields.Meanings, fields.Hint
+			card.PartsOfSpeech, card.Meanings, card.Hint, card.Example = fields.PartsOfSpeech, fields.Meanings, fields.Hint, fields.Example
 			m.cards[index] = card
 			return card, nil
 		}
@@ -37,6 +37,10 @@ func (m *memoryRepo) Update(_ context.Context, id int64, fields domain.Fields) (
 }
 func (*memoryRepo) SetReview(context.Context, int64, bool) (domain.Card, error) { panic("unused") }
 func (*memoryRepo) Delete(context.Context, int64) error                         { panic("unused") }
+func (*memoryRepo) RecordAnswer(context.Context, int64, bool, time.Time) (domain.Card, error) {
+	panic("unused")
+}
+func (*memoryRepo) StudyDays(context.Context) ([]domain.StudyDay, error) { panic("unused") }
 func (m *memoryRepo) ApplyImport(ctx context.Context, writes []domain.ImportWrite) error {
 	copyRepo := &memoryRepo{cards: append([]domain.Card(nil), m.cards...)}
 	for _, write := range writes {
@@ -98,6 +102,33 @@ func TestImportCompletesWithOneDatabaseRoundTrip(t *testing.T) {
 	result, err := New(repo).Import(ctx, strings.NewReader(csv.String()))
 	if err != nil || result.Added != 10 || len(repo.cards) != 10 {
 		t.Fatalf("import should finish without partial writes: result=%#v, cards=%d, err=%v", result, len(repo.cards), err)
+	}
+}
+
+func TestImportReadsExportedHintAndExample(t *testing.T) {
+	repo := &memoryRepo{cards: []domain.Card{{ID: 1, Word: "Run", PartsOfSpeech: []string{"verb"}, Meanings: []string{"วิ่ง"}, Hint: "เดิม", Example: "I run."}}}
+	input := "คำศัพท์,ชนิดของคำ,ความหมาย,คำใบ้,ตัวอย่างประโยค\n" +
+		"About,\"verb, preposition\",\"ประมาณ, เกี่ยวกับ\",ใช้บ่อย,\"It is about you, not me.\"\n" +
+		"Run,noun,การวิ่ง,ใหม่,ใหม่\n" +
+		"Calm,adjective,สงบ,,\n" +
+		"Bad,noun,,,\n" +
+		"Short,noun,สั้น\n"
+	result, err := New(repo).Import(context.Background(), strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Added != 2 || result.Merged != 1 || result.Invalid != 2 {
+		t.Fatalf("unexpected summary: %#v", result)
+	}
+	if result.Issues[0].Reason != "ไม่มีความหมาย" || result.Issues[1].Reason != "ต้องมีข้อมูล 5 คอลัมน์" {
+		t.Fatalf("unexpected issues: %#v", result.Issues)
+	}
+	about := repo.cards[1]
+	if about.Word != "About" || len(about.Meanings) != 2 || about.Hint != "ใช้บ่อย" || about.Example != "It is about you, not me." {
+		t.Fatalf("full row was not parsed: %#v", about)
+	}
+	if run := repo.cards[0]; run.Hint != "เดิม" || run.Example != "I run." || len(run.Meanings) != 2 {
+		t.Fatalf("merging must keep the existing hint and example: %#v", run)
 	}
 }
 

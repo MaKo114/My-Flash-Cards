@@ -36,7 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 	app := fiber.New(fiber.Config{BodyLimit: 6 << 20})
-	httpapi.New(application.New(postgres.New(pool))).Register(app)
+	httpapi.New(application.New(postgres.New(pool)), httpapi.NewAuth(os.Getenv("APP_PASSWORD"))).Register(app)
 	addr := os.Getenv("LISTEN_ADDR")
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port

@@ -95,9 +95,29 @@ func TestGroupLegacyCardsMigration(t *testing.T) {
 	if err := runMigrations(ctx, pool); err != nil {
 		t.Fatalf("migration must be repeatable: %v", err)
 	}
+	files, err := migrations.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var appliedCount int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&appliedCount); err != nil || appliedCount != 3 {
-		t.Fatalf("expected three recorded migrations, got %d, %v", appliedCount, err)
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&appliedCount); err != nil || appliedCount != len(files) {
+		t.Fatalf("expected %d recorded migrations, got %d, %v", len(files), appliedCount, err)
+	}
+	today := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	answered, err := repo.RecordAnswer(ctx, cards[0].ID, true, today)
+	if err != nil || answered.SRSStep != 1 || answered.DueOn == nil || *answered.DueOn != "2026-11-04" || answered.CorrectCount != 1 || answered.NeedsReview {
+		t.Fatalf("correct answer was not scheduled: %#v, %v", answered, err)
+	}
+	answered, err = repo.RecordAnswer(ctx, cards[0].ID, false, today)
+	if err != nil || answered.SRSStep != 0 || *answered.DueOn != "2026-11-03" || answered.WrongCount != 1 || !answered.NeedsReview {
+		t.Fatalf("wrong answer did not restart the schedule: %#v, %v", answered, err)
+	}
+	if _, err := repo.RecordAnswer(ctx, 999999, true, today); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for a missing card, got %v", err)
+	}
+	days, err := repo.StudyDays(ctx)
+	if err != nil || len(days) != 1 || days[0] != (domain.StudyDay{Date: "2026-11-03", Answers: 2, Correct: 1}) {
+		t.Fatalf("unexpected study days: %#v, %v", days, err)
 	}
 	if err := repo.Delete(ctx, cards[1].ID); err != nil {
 		t.Fatal(err)

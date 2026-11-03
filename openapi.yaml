@@ -4,17 +4,26 @@ info:
   version: 1.0.0
   description: |
     API สำหรับคลังคำศัพท์ชุดเดียว หนึ่งคำสะกดมีหนึ่งบัตรและเก็บชนิดของคำ
-    กับความหมายเป็นรายการอิสระ ไม่มีระบบบัญชี ดู User Stories และ
-    Acceptance Criteria ใน docs/ ของ repository
+    กับความหมายเป็นรายการอิสระ ดู User Stories และ Acceptance Criteria ใน docs/
+    ของ repository
+
+    เมื่อ backend ตั้ง APP_PASSWORD ทุก path ยกเว้น /api/health, /api/session และ
+    /api/login ต้องส่ง Authorization: Bearer <token> ที่ได้จาก /api/login
+    ไม่เช่นนั้นตอบ 401; ถ้าไม่ตั้ง APP_PASSWORD ทุก path เปิดใช้ได้โดยไม่ต้องมี token
 servers:
   - url: https://my-flash-cards-puce.vercel.app
     description: Vercel
   - url: http://127.0.0.1:3001
     description: Local backend
-security: []
+security:
+  - session: []
 tags:
   - name: Health
     description: ตรวจการเริ่มทำงานของ backend
+  - name: Auth
+    description: เข้าสู่ระบบด้วยรหัสผ่านเดียวของแอป (APP_PASSWORD)
+  - name: Study
+    description: บันทึกคำตอบ Challenge ตารางทบทวน และสถิติการฝึก
   - name: Cards
     description: จัดการบัตรคำศัพท์และสถานะต้องทบทวน
   - name: Import
@@ -23,6 +32,7 @@ paths:
   /api/health:
     get:
       tags: [Health]
+      security: []
       operationId: getHealth
       summary: ตรวจว่า backend เริ่มทำงานสำเร็จ
       responses:
@@ -34,6 +44,66 @@ paths:
                 $ref: '#/components/schemas/Health'
               example:
                 ok: true
+  /api/session:
+    get:
+      tags: [Auth]
+      security: []
+      operationId: getSession
+      summary: บอกว่าต้องใช้รหัสผ่านหรือไม่ และ token ที่ส่งมายังใช้ได้หรือไม่
+      responses:
+        '200':
+          description: สถานะการเข้าสู่ระบบ
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authRequired, authenticated]
+                properties:
+                  authRequired:
+                    type: boolean
+                  authenticated:
+                    type: boolean
+              example:
+                authRequired: true
+                authenticated: false
+  /api/login:
+    post:
+      tags: [Auth]
+      security: []
+      operationId: login
+      summary: แลก APP_PASSWORD เป็น token ที่ใช้ได้ 30 วัน
+      description: |
+        ใส่รหัสผ่านผิด 5 ครั้งจากที่อยู่เดียวกัน หรือรวม 50 ครั้งภายใน 15 นาที จะถูกปฏิเสธด้วย 429
+        การเปลี่ยน APP_PASSWORD ทำให้ token เดิมทั้งหมดใช้ไม่ได้
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: token สำหรับ header Authorization (ว่างเมื่อไม่ได้ตั้งรหัสผ่าน)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: ใส่รหัสผ่านผิดหลายครั้งเกินไป
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/cards:
     get:
       tags: [Cards]
@@ -156,6 +226,68 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/ServerError'
+  /api/cards/{id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    post:
+      tags: [Study]
+      operationId: answerCard
+      summary: บันทึกคำตอบ Challenge และจัดวันทบทวนครั้งถัดไป
+      description: |
+        ตอบถูกเลื่อน srsStep ขึ้นหนึ่งขั้นและตั้ง dueOn เป็น today บวก 1, 3, 7, 14, 30 หรือ 60 วันตามขั้น
+        ตอบผิดตั้ง srsStep เป็น 0 และ dueOn เป็น today
+        พร้อมตั้ง needsReview เป็นค่าตรงข้ามกับ correct นับ correctCount/wrongCount และบันทึกลงประวัติการฝึก
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correct]
+              properties:
+                correct:
+                  type: boolean
+                today:
+                  type: string
+                  format: date
+                  description: วันที่ตามเวลาท้องถิ่นของผู้เรียน (YYYY-MM-DD); ถ้าไม่ส่งใช้วันที่ UTC ของเซิร์ฟเวอร์
+            example:
+              correct: true
+              today: '2026-11-03'
+      responses:
+        '200':
+          description: บัตรหลังบันทึกคำตอบ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/study-days:
+    get:
+      tags: [Study]
+      operationId: listStudyDays
+      summary: จำนวนคำตอบรายวัน ใช้คำนวณวันที่ฝึกต่อเนื่องและกราฟสถิติ
+      description: เรียงจากวันล่าสุด ไม่เกิน 400 วัน; ประวัติยังอยู่แม้ลบบัตรไปแล้ว
+      responses:
+        '200':
+          description: รายการวันที่มีการตอบ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudyDay'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
   /api/cards/import:
     post:
       tags: [Import]
@@ -163,7 +295,10 @@ paths:
       summary: นำเข้าคำศัพท์จาก CSV
       description: |
         ไฟล์ UTF-8 ขนาดไม่เกิน 5 MiB ต้องมีหัวคอลัมน์
-        คำศัพท์,ชนิดของคำ,ความหมาย ตามลำดับ รองรับ BOM และช่องที่มีหลายค่า
+        คำศัพท์,ชนิดของคำ,ความหมาย ตามลำดับ หรือแบบเต็ม 5 คอลัมน์
+        คำศัพท์,ชนิดของคำ,ความหมาย,คำใบ้,ตัวอย่างประโยค (รูปแบบที่ส่งออกจากหน้าเว็บ)
+        ซึ่งแต่ละแถวต้องมี 5 ช่องพอดีและความหมายหลายค่าต้องครอบด้วยเครื่องหมายคำพูด
+        คำใบ้และตัวอย่างประโยคใช้กับคำใหม่เท่านั้น รองรับ BOM และช่องที่มีหลายค่า
         คั่นด้วย comma เมื่อครอบด้วยเครื่องหมายคำพูดตามรูปแบบ CSV
         ยอมรับช่องว่างก่อนเครื่องหมายคำพูดและความหมายที่คั่นด้วย comma โดยไม่ครอบช่อง
         แต่หลายชนิดของคำในช่องเดียวต้องครอบด้วยเครื่องหมายคำพูด
@@ -213,6 +348,11 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: token จาก /api/login ใช้เมื่อ backend ตั้ง APP_PASSWORD
   parameters:
     CardId:
       name: id
@@ -224,6 +364,12 @@ components:
         format: int64
         minimum: 1
   responses:
+    Unauthorized:
+      description: ยังไม่ได้เข้าสู่ระบบ token หมดอายุ หรือรหัสผ่านไม่ถูกต้อง
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     BadRequest:
       description: ID, JSON หรือข้อมูลบัตร/CSV ไม่ถูกต้อง
       content:
@@ -303,9 +449,12 @@ components:
         hint:
           type: string
           description: คำใบ้ ไม่บังคับ; ค่าเริ่มต้นเป็นข้อความว่าง
+        example:
+          type: string
+          description: ตัวอย่างประโยค ไม่บังคับ; ค่าเริ่มต้นเป็นข้อความว่าง
     Card:
       type: object
-      required: [id, word, partsOfSpeech, meanings, partOfSpeech, meaning, hint, needsReview]
+      required: [id, word, partsOfSpeech, meanings, partOfSpeech, meaning, hint, example, needsReview, srsStep, dueOn, correctCount, wrongCount]
       properties:
         id:
           type: integer
@@ -331,8 +480,26 @@ components:
           description: รายการความหมายที่รวมเป็นข้อความคั่นด้วย comma เพื่อความเข้ากันได้
         hint:
           type: string
+        example:
+          type: string
         needsReview:
           type: boolean
+        srsStep:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: จำนวนครั้งที่ตอบถูกติดกันใน Challenge (สูงสุด 6)
+        dueOn:
+          type: string
+          format: date
+          nullable: true
+          description: วันที่ถึงกำหนดทบทวน; null เมื่อยังไม่เคยตอบใน Challenge
+        correctCount:
+          type: integer
+          minimum: 0
+        wrongCount:
+          type: integer
+          minimum: 0
       example:
         id: 12
         word: Run
@@ -341,7 +508,25 @@ components:
         partOfSpeech: verb, noun
         meaning: วิ่ง, การวิ่ง
         hint: ใช้ขา
+        example: I run every morning.
         needsReview: false
+        srsStep: 2
+        dueOn: '2026-11-06'
+        correctCount: 4
+        wrongCount: 1
+    StudyDay:
+      type: object
+      required: [date, answers, correct]
+      properties:
+        date:
+          type: string
+          format: date
+        answers:
+          type: integer
+          minimum: 1
+        correct:
+          type: integer
+          minimum: 0
     ImportIssue:
       type: object
       required: [row, kind, reason]

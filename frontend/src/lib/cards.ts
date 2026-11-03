@@ -6,10 +6,60 @@ export type Card = {
   partsOfSpeech: string[]
   meanings: string[]
   hint: string
+  example: string
   needsReview: boolean
+  // Spaced repetition: correct answers in a row and the local day (YYYY-MM-DD) the card is due; null until first answered.
+  srsStep: number
+  dueOn: string | null
+  correctCount: number
+  wrongCount: number
 }
 
-export type CardFields = Pick<Card, 'word' | 'partsOfSpeech' | 'meanings' | 'hint'>
+export type CardFields = Pick<Card, 'word' | 'partsOfSpeech' | 'meanings' | 'hint' | 'example'>
+
+export type StudyDay = { date: string; answers: number; correct: number }
+
+// Fills fields that older API responses or cached snapshots may not have.
+export function normalizeCard(card: Partial<Card> & Pick<Card, 'id' | 'word' | 'partOfSpeech' | 'meaning' | 'partsOfSpeech' | 'meanings' | 'hint' | 'needsReview'>): Card {
+  return { ...card, example: card.example ?? '', srsStep: card.srsStep ?? 0, dueOn: card.dueOn ?? null, correctCount: card.correctCount ?? 0, wrongCount: card.wrongCount ?? 0 }
+}
+
+export function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+export function isDue(card: Card, today: string) {
+  return card.dueOn !== null && card.dueOn <= today
+}
+
+export type MemoryLevel = 'new' | 'learning' | 'familiar' | 'mastered'
+
+export function memoryLevel(card: Card): MemoryLevel {
+  if (card.dueOn === null) return 'new'
+  if (card.srsStep <= 1) return 'learning'
+  if (card.srsStep <= 3) return 'familiar'
+  return 'mastered'
+}
+
+// Counts consecutive study days ending today, or ending yesterday when today has no answers yet.
+export function studyStreak(days: StudyDay[], today: string) {
+  const studied = new Set(days.filter(day => day.answers > 0).map(day => day.date))
+  const cursor = new Date(`${today}T12:00:00`)
+  if (!studied.has(today)) cursor.setDate(cursor.getDate() - 1)
+  let streak = 0
+  while (studied.has(localDay(cursor))) {
+    streak++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return streak
+}
+
+// Exports in the five-column format that the CSV import reads back, quoting every field.
+export function cardsToCsv(cards: Card[]) {
+  const quote = (value: string) => `"${value.replace(/"/g, '""')}"`
+  const rows = cards.map(card => [card.word, card.partsOfSpeech.join(', '), card.meanings.join(', '), card.hint, card.example].map(quote).join(','))
+  return '\ufeff' + ['คำศัพท์,ชนิดของคำ,ความหมาย,คำใบ้,ตัวอย่างประโยค', ...rows].join('\r\n') + '\r\n'
+}
 
 export type ImportResult = {
   added: number

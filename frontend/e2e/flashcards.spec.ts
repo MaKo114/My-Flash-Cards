@@ -118,8 +118,8 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByRole('button', { name: 'ทั้งหมด', exact: true }).click()
   await page.getByRole('button', { name: /เฉพาะคำที่ต้องทบทวน/ }).click()
   await page.getByRole('button', { name: 'ลบ Book' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'ลบ', exact: true }).click()
   await expect(page.getByText('Book', { exact: true })).not.toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'ลบ “Book” แล้ว' })).toBeVisible()
 
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.getByRole('button', { name: 'Challenge', exact: true }).click()
@@ -259,11 +259,14 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await partFilter.click()
   await page.getByRole('option', { name: 'ทุกชนิด', exact: true }).click()
   await page.getByRole('button', { name: 'ลบ Run' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก' }).click()
-  await expect(page.getByText('Run', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'ลบ Run' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'ลบ', exact: true }).click()
   await expect(page.getByText('Run', { exact: true })).not.toBeVisible()
+  await page.getByRole('button', { name: 'เลิกทำ' }).click()
+  await expect(page.getByText('Run', { exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  expect((await (await request.get(`${api}/cards`)).json() as { word: string }[]).some(card => card.word === 'Run')).toBe(true)
+  await page.getByRole('button', { name: 'ลบ Run' }).click()
+  await expect(page.getByText('Run', { exact: true })).not.toBeVisible()
+  await expect.poll(async () => (await (await request.get(`${api}/cards`)).json() as { word: string }[]).some(card => card.word === 'Run'), { timeout: 10_000 }).toBe(false)
 })
 
 test('groups a word with multiple parts and asks its spelling once per challenge', async ({ page, request }) => {

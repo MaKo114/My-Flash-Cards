@@ -1,9 +1,44 @@
-import type { Card, CardFields, ImportProgress, ImportResult } from './cards'
+import { normalizeCard, type Card, type CardFields, type ImportProgress, type ImportResult, type StudyDay } from './cards'
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+const tokenKey = 'flashcards.token.v1'
+let unauthorizedHandler: (() => void) | null = null
+
+export class UnauthorizedError extends Error {
+  constructor() { super('กรุณาเข้าสู่ระบบ') }
+}
+
+export function readToken() {
+  try { return localStorage.getItem(tokenKey) || '' } catch { return '' }
+}
+
+export function writeToken(token: string) {
+  try {
+    if (token) localStorage.setItem(tokenKey, token)
+    else localStorage.removeItem(tokenKey)
+  } catch {
+    // Without storage the session lasts until the page is reloaded.
+  }
+}
+
+// The app shows the sign-in screen when any request comes back 401.
+export function onUnauthorized(handler: (() => void) | null) { unauthorizedHandler = handler }
+
+function authHeaders(): Record<string, string> {
+  const token = readToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+function unauthorized() {
+  writeToken('')
+  unauthorizedHandler?.()
+  return new UnauthorizedError()
+}
+
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   let response: Response
-  try { response = await fetch(url, init) }
+  try { response = await fetch(url, { ...init, headers: { ...authHeaders(), ...init.headers } }) }
   catch { throw new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจว่า backend กำลังทำงาน') }
+  if (response.status === 401 && !url.endsWith('/api/login')) throw unauthorized()
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { error?: string }
     throw new Error(body.error || 'ทำรายการไม่สำเร็จ')
@@ -20,6 +55,7 @@ function importCsv(file: File, onProgress: (progress: ImportProgress) => void): 
     body.append('file', file)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/cards/import')
+    for (const [name, value] of Object.entries(authHeaders())) xhr.setRequestHeader(name, value)
     xhr.upload.onprogress = event => {
       if (event.lengthComputable && event.total > 0) {
         onProgress({ phase: 'uploading', percent: Math.min(100, Math.round(event.loaded / event.total * 100)) })
@@ -27,6 +63,7 @@ function importCsv(file: File, onProgress: (progress: ImportProgress) => void): 
     }
     xhr.upload.onload = () => onProgress({ phase: 'processing', percent: 100 })
     xhr.onload = () => {
+      if (xhr.status === 401) { reject(unauthorized()); return }
       let parsed: unknown
       try { parsed = JSON.parse(xhr.responseText) }
       catch { parsed = null }
@@ -45,11 +82,22 @@ function importCsv(file: File, onProgress: (progress: ImportProgress) => void): 
   })
 }
 
+const card = (value: Promise<Card>) => value.then(normalizeCard)
+
 export const api = {
-  list: () => request<Card[]>('/api/cards'),
-  create: (fields: CardFields) => request<Card>('/api/cards', { method: 'POST', ...json(fields) }),
-  update: (id: number, fields: CardFields) => request<Card>(`/api/cards/${id}`, { method: 'PUT', ...json(fields) }),
-  review: (id: number, needsReview: boolean) => request<Card>(`/api/cards/${id}/review`, { method: 'PATCH', ...json({ needsReview }) }),
+  session: () => request<{ authRequired: boolean; authenticated: boolean }>('/api/session'),
+  login: async (password: string) => {
+    const { token } = await request<{ token: string }>('/api/login', { method: 'POST', ...json({ password }) })
+    writeToken(token)
+  },
+  list: () => request<Card[]>('/api/cards').then(cards => cards.map(normalizeCard)),
+  create: (fields: CardFields) => card(request<Card>('/api/cards', { method: 'POST', ...json(fields) })),
+  update: (id: number, fields: CardFields) => card(request<Card>(`/api/cards/${id}`, { method: 'PUT', ...json(fields) })),
+  review: (id: number, needsReview: boolean) => card(request<Card>(`/api/cards/${id}/review`, { method: 'PATCH', ...json({ needsReview }) })),
+  answer: (id: number, correct: boolean, today: string) => card(request<Card>(`/api/cards/${id}/answer`, { method: 'POST', ...json({ correct, today }) })),
+  studyDays: () => request<StudyDay[]>('/api/study-days'),
   delete: (id: number) => request<void>(`/api/cards/${id}`, { method: 'DELETE' }),
+  // keepalive lets pending deletes finish while the page is closing.
+  deleteOnExit: (id: number) => { void fetch(`/api/cards/${id}`, { method: 'DELETE', keepalive: true, headers: authHeaders() }).catch(() => undefined) },
   import: importCsv,
 }
