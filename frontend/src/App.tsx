@@ -136,7 +136,7 @@ function ChallengePanel({ card, mode, firstLanguage, soundEffects, onToggleSound
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    if (mode === 'meaning') { setRevealed(true); return }
+    if (mode === 'meaning') { if (!revealed) setRevealed(true); else if (!pending) void assess(true); return }
     if (!pending) void assess(revealed ? false : correct)
   }
 
@@ -166,12 +166,12 @@ function ChallengePanel({ card, mode, firstLanguage, soundEffects, onToggleSound
     </div>
     <div className="mx-auto w-full max-w-xl border-t border-teal-100 pt-5">
       <div className="mb-3 flex justify-end"><button type="button" aria-pressed={soundEffects} onClick={onToggleSoundEffects} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">{soundEffects ? <Volume2 size={14} /> : <VolumeX size={14} />} เสียงตอบรับ {soundEffects ? 'เปิด' : 'ปิด'}</button></div>
-      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={(mode === 'meaning' && revealed) || pending} readOnly={mode !== 'meaning' && revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => setAnswer(event.target.value)} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning' && !revealed} /></label>
+      <label className="block text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}<Input autoFocus value={answer} disabled={pending} readOnly={revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => setAnswer(event.target.value)} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} className="mt-2" required={mode !== 'meaning' && !revealed} /></label>
       {mode !== 'meaning' && <><p className="mt-3 text-sm text-slate-500">อักษรบนการ์ดจะแสดงสีเขียวเมื่อถูก สีแดงเมื่อผิด · กด Enter เพื่อไปคำถัดไป</p>{revealed && <p className="mt-2 text-sm text-amber-700">ดูเฉลยแล้ว คำนี้จะถูกเก็บไว้ทบทวน</p>}<div className="mt-4 flex justify-end gap-2">{!revealed && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit" disabled={pending || (!revealed && !answer.trim())}>{pending ? 'กำลังบันทึก...' : 'คำถัดไป'} <ArrowRight size={16} /></Button></div></>}
       {mode === 'meaning' && (!revealed ? <div className="mt-4 flex justify-end"><Button type="submit">ดูเฉลย <ArrowRight size={16} /></Button></div> : <>
         <div className="mt-5 rounded-xl bg-teal-50 p-4"><p className="text-xs font-bold text-teal-700">เฉลย</p><p className="mt-1 text-xl font-bold text-slate-900">{solution}</p>{mode === 'meaning' && firstLanguage === 'THAI' && <PartBadges parts={card.partsOfSpeech} className="mt-2" />}</div>
-        <p className="mt-5 text-sm text-slate-500">เลือกตามที่จำได้จริงเพื่อบันทึกผลและไปคำถัดไป</p>
-        <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={pending} onClick={() => void assess(false)}><Star size={16} /> ยังจำไม่ได้</Button><Button type="button" disabled={pending} onClick={() => void assess(true)}><Check size={16} /> จำได้</Button></div>
+        <p className="mt-5 text-sm text-slate-500">กด Enter ถ้าจำได้ หรือคลิก ยังจำไม่ได้ เพื่อบันทึกผลและไปคำถัดไป</p>
+        <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={pending} onClick={() => void assess(false)}><Star size={16} /> ยังจำไม่ได้</Button><Button type="submit" disabled={pending}><Check size={16} /> จำได้</Button></div>
       </>)}
       {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
     </div>
