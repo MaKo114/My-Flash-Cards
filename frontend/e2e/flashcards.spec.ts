@@ -168,6 +168,9 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   const copyWord = (await page.getByTestId('challenge-prompt').textContent())!
+  const answerBox = page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ')
+  await expect(answerBox).toHaveAttribute('autocomplete', 'off')
+  await expect(answerBox).toHaveAttribute('spellcheck', 'false')
   await expect(page.getByRole('button', { name: 'เสียงตอบรับ เปิด' })).toHaveAttribute('aria-pressed', 'true')
   const panel = await page.getByTestId('challenge-prompt').locator('xpath=ancestor::form').boundingBox()
   expect(panel).not.toBeNull()
