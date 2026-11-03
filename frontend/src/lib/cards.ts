@@ -41,7 +41,7 @@ export function searchCards(cards: Card[], query: string) {
   )
 }
 
-export function shuffleCards(cards: Card[], random: () => number = Math.random) {
+export function shuffleCards<T>(cards: T[], random: () => number = Math.random) {
   const result = [...cards]
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1))
@@ -60,6 +60,32 @@ export function typingFeedback(word: string, answer: string) {
 
 export function isTypingMatch(word: string, answer: string) {
   return Array.from(word).length === Array.from(answer).length && typingFeedback(word, answer).every(letter => letter.correct)
+}
+
+export type Choice = { id: number; text: string }
+
+// Builds a multiple-choice question: the answer plus wrong options taken from the other cards.
+// Options that share the answer's part of speech or first letter come first so the question is not trivial,
+// and cards sharing any meaning with the answer are skipped so only one option can be right.
+export function buildChoices(card: Card, pool: Card[], side: 'word' | 'meaning', count = 4, random: () => number = Math.random): Choice[] {
+  const textOf = (item: Card) => side === 'word' ? item.word : item.meaning
+  const normalize = (value: string) => value.trim().toLowerCase()
+  const meanings = new Set(card.meanings.map(normalize))
+  const parts = new Set(card.partsOfSpeech.map(normalize))
+  const initial = normalize(card.word).charAt(0)
+  const score = (item: Card) => (item.partsOfSpeech.some(part => parts.has(normalize(part))) ? 2 : 0) + (normalize(item.word).charAt(0) === initial ? 1 : 0)
+  // Shuffle first, then a stable sort keeps the random order within each score.
+  const candidates = shuffleCards(pool.filter(item => item.id !== card.id), random).sort((a, b) => score(b) - score(a))
+  const seen = new Set([normalize(textOf(card))])
+  const wrong: Choice[] = []
+  for (const item of candidates) {
+    if (wrong.length >= count - 1) break
+    const text = normalize(textOf(item))
+    if (!text || seen.has(text) || item.meanings.some(meaning => meanings.has(normalize(meaning)))) continue
+    seen.add(text)
+    wrong.push({ id: item.id, text: textOf(item) })
+  }
+  return shuffleCards([{ id: card.id, text: textOf(card) }, ...wrong], random)
 }
 
 // Shrinks the headline font for long words or meanings so it never overflows the card.

@@ -10,7 +10,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   }
 
   await page.goto('/')
-  await expect(page).toHaveTitle('my-flash-card')
+  await expect(page).toHaveTitle('คลังคำศัพท์ · My Flash Cards')
   await expect(page.getByText('ยังไม่มีคำศัพท์')).toBeVisible()
   const pageWidth = await page.evaluate(() => document.documentElement.clientWidth)
   const sidebarHeight = async () => page.locator('aside').evaluate(element => Math.round(element.getBoundingClientRect().height))
@@ -358,4 +358,75 @@ test('imports a large CSV and safely skips it on retry', async ({ page, request 
   await page.locator('input[type="file"]').setInputFiles(file)
   await expect(page.getByText('เพิ่ม 0 คำ · รวมข้อมูล 0 แถว · ข้ามคำซ้ำ 199 แถว · ข้อมูลไม่ครบ/ผิดรูปแบบ 0 แถว')).toBeVisible()
   expect((await (await request.get(`${api}/cards`)).json() as unknown[])).toHaveLength(199)
+})
+
+test('multiple choice rounds, retrying missed words and saved settings', async ({ page, request }) => {
+  const existing = await request.get(`${api}/cards`)
+  for (const card of await existing.json() as { id: number }[]) {
+    expect((await request.delete(`${api}/cards/${card.id}`)).ok()).toBeTruthy()
+  }
+  const numbers = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'))
+  for (const number of numbers) {
+    expect((await request.post(`${api}/cards`, { data: { word: `Word${number}`, partOfSpeech: 'noun', meaning: `ความหมาย${number}` } })).ok()).toBeTruthy()
+  }
+  const choices = page.getByTestId('choice')
+  const choose = (text: string) => choices.filter({ hasText: new RegExp(`^[0-9]${text}$`) })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Challenge', exact: true }).click()
+  await page.getByRole('button', { name: 'เลือกคำตอบ' }).click()
+  await expect(page.getByRole('button', { name: 'ENG', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('combobox', { name: 'จำนวนคำต่อรอบ' }).click()
+  await page.getByRole('option', { name: '10 คำ', exact: true }).click()
+  await expect(page.getByText('พร้อมฝึก 10 คำ')).toBeVisible()
+  await expect(page.getByText('คำที่ 1–10 จาก 12 คำ')).toBeVisible()
+  await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
+
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Word01')
+  await expect(choices).toHaveCount(4)
+  await choose('ความหมาย01').click()
+  await expect(page.getByTestId('answer-result')).toHaveText('ถูกต้อง!')
+  await expect(page.getByText('คำที่ 2 จาก 10')).toBeVisible()
+
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Word02')
+  await choices.filter({ hasNotText: 'ความหมาย02' }).first().click()
+  await expect(page.getByTestId('answer-result')).toHaveText('ยังไม่ถูก เก็บไว้ทบทวน')
+  await expect(choose('ความหมาย02')).toHaveAttribute('data-state', 'correct')
+  await expect(page.getByText('คำที่ 2 จาก 10')).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('คำที่ 3 จาก 10')).toBeVisible()
+
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Word03')
+  const texts = await choices.allTextContents()
+  await page.keyboard.press(String(texts.findIndex(text => text.endsWith('ความหมาย03')) + 1))
+  await expect(page.getByText('คำที่ 4 จาก 10')).toBeVisible()
+  for (const number of numbers.slice(3, 10)) {
+    await expect(page.getByTestId('challenge-prompt')).toHaveText(`Word${number}`)
+    await choose(`ความหมาย${number}`).click()
+  }
+  await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
+  await expect(page.getByText('จำได้ 9 คำ · ยังจำไม่ได้ 1 คำ')).toBeVisible()
+  await expect(page.getByRole('list', { name: 'คำที่ยังจำไม่ได้' })).toContainText('Word02')
+  const afterRound = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
+  expect(afterRound.find(card => card.word === 'Word02')?.needsReview).toBe(true)
+
+  await page.getByRole('button', { name: 'ฝึกเฉพาะคำที่ผิดอีกรอบ' }).click()
+  await expect(page.getByText('คำที่ 1 จาก 1')).toBeVisible()
+  await expect(page.getByText('ฝึกคำที่ยังจำไม่ได้')).toBeVisible()
+  await choose('ความหมาย02').click()
+  await expect(page.getByText('จำได้ 1 คำ · ยังจำไม่ได้ 0 คำ')).toBeVisible()
+
+  await page.getByRole('button', { name: 'ชุดถัดไป (คำที่ 11–12)' }).click()
+  await expect(page.getByText('คำที่ 1 จาก 2')).toBeVisible()
+  await page.getByRole('button', { name: 'THAI', exact: true }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('ความหมาย11')
+  await choose('Word11').click()
+  await expect(page.getByText('คำที่ 2 จาก 2')).toBeVisible()
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Challenge', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'เลือกคำตอบ' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'THAI', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('combobox', { name: 'จำนวนคำต่อรอบ' })).toContainText('10 คำ')
+  await expect(page.getByText('พร้อมฝึก 10 คำ')).toBeVisible()
 })
