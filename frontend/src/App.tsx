@@ -7,8 +7,10 @@ import { Select } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { readCachedCards, writeCachedCards } from '@/lib/card-cache'
 import { playAnswerSound } from '@/lib/answer-sound'
-import { filterByPartOfSpeech, filterCards, fitTextClass, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportProgress, type ImportResult } from '@/lib/cards'
+import { readSettings, roundSizes, writeSettings, type ChallengeMode, type Language } from '@/lib/settings'
+import { buildChoices, filterByPartOfSpeech, filterCards, fitTextClass, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card, type CardFields, type ImportProgress, type ImportResult } from '@/lib/cards'
 
+const appName = 'My Flash Cards'
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const pageSize = 50
 const partsOfSpeech = ['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection', 'determiner', 'phrase']
@@ -121,15 +123,13 @@ function ConfirmDialog({ request, onClose }: { request: ConfirmRequest | null; o
   </Dialog>
 }
 
-function LanguageToggle({ label, value, onChange }: { label: string; value: 'ENG' | 'THAI'; onChange: (value: 'ENG' | 'THAI') => void }) {
+function LanguageToggle({ label, value, onChange }: { label: string; value: Language; onChange: (value: Language) => void }) {
   return <div className="flex items-center gap-2" role="group" aria-label={label}><span className="text-sm font-semibold text-slate-600">{label}</span><div className="flex rounded-xl border border-slate-200 bg-white p-1">{(['ENG', 'THAI'] as const).map(item => <button key={item} type="button" aria-pressed={value === item} onClick={() => onChange(item)} className={`rounded-lg px-3 py-1 text-xs font-bold ${value === item ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>{item}</button>)}</div></div>
 }
 
 function Empty({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action?: React.ReactNode }) {
   return <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 text-center"><div className="mb-4 rounded-2xl bg-teal-50 p-4 text-teal-500">{icon}</div><h3 className="text-lg font-bold text-slate-800">{title}</h3><p className="mt-1 max-w-sm text-sm leading-6 text-slate-500">{description}</p>{action && <div className="mt-5">{action}</div>}</div>
 }
-
-type ChallengeMode = 'meaning' | 'copy' | 'listen'
 
 function speak(word: string) {
   if (!('speechSynthesis' in window)) return
@@ -139,28 +139,40 @@ function speak(word: string) {
   window.speechSynthesis.speak(utterance)
 }
 
-function ChallengePanel({ card, mode, firstLanguage, soundEffects, onToggleSoundEffects, onAssess }: { card: Card; mode: ChallengeMode; firstLanguage: 'ENG' | 'THAI'; soundEffects: boolean; onToggleSoundEffects: () => void; onAssess: (remembered: boolean) => Promise<void> }) {
+const choiceStyles = {
+  idle: ['border-slate-200 bg-white text-slate-800 hover:border-teal-300 hover:bg-teal-50/60', 'bg-slate-100 text-slate-600'],
+  correct: ['border-emerald-500 bg-emerald-50 text-emerald-900', 'bg-emerald-600 text-white'],
+  wrong: ['border-rose-400 bg-rose-50 text-rose-900', 'bg-rose-600 text-white'],
+  other: ['border-slate-200 bg-white text-slate-400', 'bg-slate-100 text-slate-400'],
+} as const
+
+function ChallengePanel({ card, pool, mode, firstLanguage, soundEffects, onToggleSoundEffects, onAssess }: { card: Card; pool: Card[]; mode: ChallengeMode; firstLanguage: Language; soundEffects: boolean; onToggleSoundEffects: () => void; onAssess: (remembered: boolean) => Promise<void> }) {
   const [answer, setAnswer] = useState('')
   const [revealed, setRevealed] = useState(false)
   const [hintVisible, setHintVisible] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [assessment, setAssessment] = useState<boolean | null>(null)
+  // The panel remounts for every word, so the options stay fixed while this question is shown.
+  const [choices] = useState(() => mode === 'choice' ? buildChoices(card, pool, firstLanguage === 'ENG' ? 'meaning' : 'word') : [])
+  const [picked, setPicked] = useState<number | null>(null)
   const assessing = useRef(false)
   const mounted = useRef(true)
   const assessRef = useRef<HTMLDivElement>(null)
+  const typing = mode === 'copy' || mode === 'listen'
   const prompt = mode === 'copy' ? card.word : firstLanguage === 'ENG' ? card.word : card.meaning
-  const solution = mode === 'meaning' && firstLanguage === 'ENG' ? card.meaning : card.word
-  const hint = card.hint || (mode === 'meaning' ? '' : card.meaning)
-  const feedback = mode === 'meaning' ? [] : typingFeedback(card.word, answer)
+  const solution = firstLanguage === 'ENG' ? card.meaning : card.word
+  const hint = card.hint || (typing ? card.meaning : '')
+  const feedback = typing ? typingFeedback(card.word, answer) : []
   const correct = isTypingMatch(card.word, answer)
   const wordLetters = Array.from(card.word)
+  const missedChoice = picked !== null && picked !== card.id
 
   useEffect(() => {
-    if (mode === 'meaning') return
+    if (!typing) return
     speak(card.word)
     return () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel() }
-  }, [card.id, card.word, mode])
+  }, [card.id, card.word, typing])
 
   useEffect(() => {
     if (mode === 'meaning' && revealed) assessRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -171,46 +183,94 @@ function ChallengePanel({ card, mode, firstLanguage, soundEffects, onToggleSound
     return () => { mounted.current = false }
   }, [])
 
+  // Number keys pick an option; Enter moves on after a wrong pick (buttons handle their own Enter).
+  useEffect(() => {
+    if (mode !== 'choice') return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+      const target = event.target as HTMLElement
+      if (target.closest('input, textarea, [role="combobox"], [role="listbox"], [role="dialog"]')) return
+      const index = Number(event.key) - 1
+      if (/^[1-9]$/.test(event.key) && index < choices.length) { event.preventDefault(); pick(choices[index].id) }
+      else if (event.key === 'Enter' && missedChoice && !target.closest('button')) { event.preventDefault(); void assess(false, 0, false) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (mode === 'choice') { if (missedChoice) void assess(false, 0, false); return }
     if (mode === 'meaning') { if (!revealed) setRevealed(true); else if (!pending) void assess(true); return }
     if (!revealed && !answer.trim()) return
     if (!pending) void assess(revealed ? false : correct)
   }
 
-  async function assess(remembered: boolean) {
+  function pick(id: number) {
+    if (picked !== null || assessing.current) return
+    setPicked(id)
+    setHintVisible(false)
+    if (id === card.id) { void assess(true, 700); return }
+    // A wrong pick waits for the learner to read the right answer before moving on.
+    setAssessment(false)
+    if (soundEffects) playAnswerSound(false)
+  }
+
+  async function assess(remembered: boolean, delay = 400, sound = true) {
     if (assessing.current) return
     assessing.current = true
     setPending(true)
     setError('')
     setAssessment(remembered)
     if ('speechSynthesis' in window) window.speechSynthesis.cancel()
-    if (soundEffects) playAnswerSound(remembered)
-    await new Promise(resolve => window.setTimeout(resolve, 400))
+    if (sound && soundEffects) playAnswerSound(remembered)
+    if (delay) await new Promise(resolve => window.setTimeout(resolve, delay))
     if (!mounted.current) return
     try { await onAssess(remembered) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'บันทึกผลไม่สำเร็จ'); setPending(false); setAssessment(null); assessing.current = false }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'บันทึกผลไม่สำเร็จ')
+      setPending(false)
+      assessing.current = false
+      // A failed save after a correct pick lets the learner pick again; after a wrong pick the next button stays to retry.
+      if (mode !== 'choice' || remembered) { setAssessment(null); setPicked(null) }
+    }
   }
+
+  const soundToggle = <button type="button" aria-pressed={soundEffects} aria-label={`เสียงตอบรับ ${soundEffects ? "เปิด" : "ปิด"}`} onClick={onToggleSoundEffects} className="inline-flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">{soundEffects ? <Volume2 size={14} /> : <VolumeX size={14} />} <span className="hidden sm:inline">เสียงตอบรับ</span> {soundEffects ? 'เปิด' : 'ปิด'}</button>
 
   return <form onSubmit={submit} noValidate className="mx-auto w-full max-w-3xl rounded-[28px] border border-teal-100 bg-gradient-to-br from-white to-teal-50 px-5 py-5 shadow-sm sm:px-8 sm:py-6">
     <div className="flex min-h-32 flex-col items-center justify-center px-2 pb-4 text-center sm:min-h-40">
       <span className="mb-3 rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal-800">{mode === 'listen' ? 'ฟังแล้วพิมพ์' : mode === 'copy' ? 'พิมพ์ตามคำศัพท์' : firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}</span>
-      {mode === 'copy' ? <p data-testid="challenge-prompt" aria-label={card.word} className={`max-w-full break-words font-bold leading-tight ${fitTextClass(card.word)}`}><span data-testid="typing-feedback" aria-hidden="true">{wordLetters.map((character, index) => <span key={index} data-state={feedback[index] ? feedback[index].correct ? 'correct' : 'wrong' : 'pending'} className={feedback[index] ? feedback[index].correct ? 'text-emerald-600' : 'text-red-600' : 'text-slate-900'}>{character === ' ' ? '\u00a0' : character}</span>)}{feedback.slice(wordLetters.length).map((letter, index) => <span key={`extra-${index}`} data-state="wrong" className="text-red-600">{letter.character === ' ' ? '\u00a0' : letter.character}</span>)}</span></p> : mode === 'listen' ? <><p data-testid="challenge-prompt" className="text-lg font-semibold text-slate-700">ฟังเสียงแล้วพิมพ์คำศัพท์</p><div data-testid="typing-feedback" aria-label="อักษรที่พิมพ์" className={`mt-3 min-h-12 max-w-full break-words font-bold leading-tight ${fitTextClass(card.word)}`}>{feedback.map((letter, index) => <span key={index} data-state={letter.correct ? 'correct' : 'wrong'} className={letter.correct ? 'text-emerald-600' : 'text-red-600'}>{letter.character === ' ' ? '\u00a0' : letter.character}</span>)}</div>{revealed && <p data-testid="challenge-answer" className="mt-2 text-xl font-bold text-slate-900">{card.word}</p>}</> : <p data-testid="challenge-prompt" className={`max-w-full break-words font-bold leading-tight text-slate-900 ${fitTextClass(prompt)}`}>{prompt}</p>}
-      {mode === 'meaning' && firstLanguage === 'ENG' && <PartBadges parts={card.partsOfSpeech} className="mt-2" />}
+      {mode === 'copy' ? <p data-testid="challenge-prompt" aria-label={card.word} className={`max-w-full break-words font-bold leading-tight ${fitTextClass(card.word)}`}><span data-testid="typing-feedback" aria-hidden="true">{wordLetters.map((character, index) => <span key={index} data-state={feedback[index] ? feedback[index].correct ? 'correct' : 'wrong' : 'pending'} className={feedback[index] ? feedback[index].correct ? 'text-emerald-600' : 'text-red-600' : 'text-slate-900'}>{character === ' ' ? ' ' : character}</span>)}{feedback.slice(wordLetters.length).map((letter, index) => <span key={`extra-${index}`} data-state="wrong" className="text-red-600">{letter.character === ' ' ? ' ' : letter.character}</span>)}</span></p> : mode === 'listen' ? <><p data-testid="challenge-prompt" className="text-lg font-semibold text-slate-700">ฟังเสียงแล้วพิมพ์คำศัพท์</p><div data-testid="typing-feedback" aria-label="อักษรที่พิมพ์" className={`mt-3 min-h-12 max-w-full break-words font-bold leading-tight ${fitTextClass(card.word)}`}>{feedback.map((letter, index) => <span key={index} data-state={letter.correct ? 'correct' : 'wrong'} className={letter.correct ? 'text-emerald-600' : 'text-red-600'}>{letter.character === ' ' ? ' ' : letter.character}</span>)}</div>{revealed && <p data-testid="challenge-answer" className="mt-2 text-xl font-bold text-slate-900">{card.word}</p>}</> : <p data-testid="challenge-prompt" lang={firstLanguage === 'ENG' ? 'en' : 'th'} className={`max-w-full break-words font-bold leading-tight text-slate-900 ${fitTextClass(prompt)}`}>{prompt}</p>}
+      {!typing && firstLanguage === 'ENG' && <PartBadges parts={card.partsOfSpeech} className="mt-2" />}
       {assessment !== null && <p data-testid="answer-result" role="status" className={`mt-3 rounded-full px-3 py-1 text-sm font-bold ${assessment ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{assessment ? 'ถูกต้อง!' : 'ยังไม่ถูก เก็บไว้ทบทวน'}</p>}
-      {mode !== 'meaning' && 'speechSynthesis' in window && <Button variant="secondary" size="sm" type="button" onClick={() => speak(card.word)} className="mt-4"><Volume2 size={16} /> ฟังอีกครั้ง</Button>}
+      {typing && 'speechSynthesis' in window && <Button variant="secondary" size="sm" type="button" onClick={() => speak(card.word)} className="mt-4"><Volume2 size={16} /> ฟังอีกครั้ง</Button>}
       {mode === 'listen' && !('speechSynthesis' in window) && <p role="alert" className="mt-3 text-sm text-amber-700">เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน ลองใช้โหมดพิมพ์ตามคำศัพท์</p>}
-      {hint && !revealed && <div className="mt-3"><Button variant="ghost" size="sm" type="button" onClick={() => setHintVisible(value => !value)}><Lightbulb size={16} /> {hintVisible ? 'ซ่อนคำใบ้' : 'ดูคำใบ้'}</Button>{hintVisible && <p role="status" className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{hint}</p>}</div>}
+      {hint && !revealed && picked === null && <div className="mt-3"><Button variant="ghost" size="sm" type="button" onClick={() => setHintVisible(value => !value)}><Lightbulb size={16} /> {hintVisible ? 'ซ่อนคำใบ้' : 'ดูคำใบ้'}</Button>{hintVisible && <p role="status" className="mt-2 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{hint}</p>}</div>}
     </div>
     <div className="mx-auto w-full max-w-xl border-t border-teal-100 pt-5">
-      <div className="mb-2 flex items-center justify-between gap-2"><label htmlFor="challenge-answer" className="whitespace-nowrap text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}</label><button type="button" aria-pressed={soundEffects} aria-label={`เสียงตอบรับ ${soundEffects ? "เปิด" : "ปิด"}`} onClick={onToggleSoundEffects} className="inline-flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700">{soundEffects ? <Volume2 size={14} /> : <VolumeX size={14} />} <span className="hidden sm:inline">เสียงตอบรับ</span> {soundEffects ? 'เปิด' : 'ปิด'}</button></div>
-      <Input id="challenge-answer" autoFocus autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={answer} disabled={pending} readOnly={revealed} aria-invalid={mode !== 'meaning' && feedback.some(letter => !letter.correct)} onChange={event => setAnswer(event.target.value)} placeholder={mode !== 'meaning' || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} required={mode !== 'meaning' && !revealed} />
-      {mode !== 'meaning' && <><p className="mt-3 text-sm text-slate-500">อักษรบนการ์ดจะแสดงสีเขียวเมื่อถูก สีแดงเมื่อผิด · กด Enter เพื่อไปคำถัดไป</p>{revealed && <p className="mt-2 text-sm text-amber-700">ดูเฉลยแล้ว คำนี้จะถูกเก็บไว้ทบทวน</p>}<div className="mt-4 flex justify-end gap-2">{!revealed && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit" disabled={pending || (!revealed && !answer.trim())}>{pending ? 'กำลังบันทึก...' : 'คำถัดไป'} <ArrowRight size={16} /></Button></div></>}
+      {mode === 'choice' ? <>
+        <div className="mb-3 flex items-center justify-between gap-2"><p id="choice-label" className="text-sm font-semibold text-slate-700">{firstLanguage === 'ENG' ? 'เลือกความหมายที่ถูกต้อง' : 'เลือกคำศัพท์ที่ถูกต้อง'}</p>{soundToggle}</div>
+        <div role="group" aria-labelledby="choice-label" className="grid gap-2 sm:grid-cols-2">{choices.map((choice, index) => {
+          const state = picked === null ? 'idle' : choice.id === card.id ? 'correct' : choice.id === picked ? 'wrong' : 'other'
+          return <button key={choice.id} type="button" data-testid="choice" data-state={state} disabled={picked !== null} onClick={() => pick(choice.id)} className={`flex min-h-14 items-center gap-3 rounded-xl border-2 px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 ${choiceStyles[state][0]}`}>
+            <span aria-hidden="true" className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${choiceStyles[state][1]}`}>{index + 1}</span>
+            <span lang={firstLanguage === 'ENG' ? 'th' : 'en'} className="min-w-0 flex-1 break-words font-semibold leading-snug">{choice.text}</span>
+            {state === 'correct' && <Check size={18} aria-hidden="true" className="shrink-0" />}{state === 'wrong' && <X size={18} aria-hidden="true" className="shrink-0" />}
+          </button>
+        })}</div>
+        {choices.length < 4 && <p className="mt-3 text-xs text-slate-500">มีคำในคลังไม่พอสำหรับ 4 ตัวเลือก เพิ่มคำศัพท์เพื่อให้มีตัวเลือกครบ</p>}
+        {missedChoice ? <div className="mt-4 flex flex-wrap items-center justify-end gap-3"><p className="mr-auto text-sm text-slate-600">คำตอบที่ถูกคือ <span className="font-bold text-emerald-700">{firstLanguage === 'ENG' ? card.meaning : card.word}</span></p><Button type="submit" autoFocus disabled={pending}>{pending ? 'กำลังบันทึก...' : 'คำถัดไป'} <ArrowRight size={16} /></Button></div> : <p className="mt-3 hidden text-sm text-slate-500 sm:block">คลิกตัวเลือก หรือกดปุ่มตัวเลข 1–{choices.length} บนคีย์บอร์ด</p>}
+      </> : <>
+      <div className="mb-2 flex items-center justify-between gap-2"><label htmlFor="challenge-answer" className="whitespace-nowrap text-sm font-semibold text-slate-700">{mode === 'meaning' ? 'คำตอบของฉัน' : 'พิมพ์คำศัพท์ภาษาอังกฤษ'}</label>{soundToggle}</div>
+      <Input id="challenge-answer" autoFocus autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={answer} disabled={pending} readOnly={revealed} aria-invalid={typing && feedback.some(letter => !letter.correct)} onChange={event => setAnswer(event.target.value)} placeholder={typing || firstLanguage === 'THAI' ? 'พิมพ์คำศัพท์ภาษาอังกฤษ' : 'พิมพ์ความหมายภาษาไทย'} required={typing && !revealed} />
+      {typing && <><p className="mt-3 text-sm text-slate-500">อักษรบนการ์ดจะแสดงสีเขียวเมื่อถูก สีแดงเมื่อผิด · กด Enter เพื่อไปคำถัดไป</p>{revealed && <p className="mt-2 text-sm text-amber-700">ดูเฉลยแล้ว คำนี้จะถูกเก็บไว้ทบทวน</p>}<div className="mt-4 flex justify-end gap-2">{!revealed && <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>ดูเฉลย</Button>}<Button type="submit" disabled={pending || (!revealed && !answer.trim())}>{pending ? 'กำลังบันทึก...' : 'คำถัดไป'} <ArrowRight size={16} /></Button></div></>}
       {mode === 'meaning' && (!revealed ? <div className="mt-4 flex justify-end"><Button type="submit">ดูเฉลย <ArrowRight size={16} /></Button></div> : <>
-        <div className="mt-3 rounded-xl bg-teal-50 px-4 py-3"><p className="text-xs font-bold text-teal-700">เฉลย</p><p className="mt-1 text-xl font-bold text-slate-900">{solution}</p>{mode === 'meaning' && firstLanguage === 'THAI' && <PartBadges parts={card.partsOfSpeech} className="mt-2" />}</div>
+        <div className="mt-3 rounded-xl bg-teal-50 px-4 py-3"><p className="text-xs font-bold text-teal-700">เฉลย</p><p className="mt-1 text-xl font-bold text-slate-900">{solution}</p>{firstLanguage === 'THAI' && <PartBadges parts={card.partsOfSpeech} className="mt-2" />}</div>
         <p className="mt-3 text-sm text-slate-500">กด Enter ถ้าจำได้ หรือคลิก ยังจำไม่ได้ เพื่อบันทึกผลและไปคำถัดไป</p>
         <div ref={assessRef} className="mt-3 flex flex-wrap gap-2 scroll-mb-6"><Button type="button" variant="secondary" disabled={pending} onClick={() => void assess(false)}><Star size={16} /> ยังจำไม่ได้</Button><Button type="submit" disabled={pending}><Check size={16} /> จำได้</Button></div>
       </>)}
+      </>}
       {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
     </div>
   </form>
@@ -227,11 +287,13 @@ export default function App() {
   const [reviewOnly, setReviewOnly] = useState(false)
   const [partFilter, setPartFilter] = useState('ALL')
   const [search, setSearch] = useState('')
-  const [shuffled, setShuffled] = useState(false)
-  const [shuffleRun, setShuffleRun] = useState(0)
-  const [firstLanguage, setFirstLanguage] = useState<'ENG' | 'THAI'>('ENG')
-  const [challengeMode, setChallengeMode] = useState<ChallengeMode>('copy')
-  const [soundEffects, setSoundEffects] = useState(true)
+  const [initialSettings] = useState(readSettings)
+  const [shuffled, setShuffled] = useState(initialSettings.shuffled)
+  const [shuffleRun, setShuffleRun] = useState(() => Date.now())
+  const [firstLanguage, setFirstLanguage] = useState<Language>(initialSettings.firstLanguage)
+  const [challengeMode, setChallengeMode] = useState<ChallengeMode>(initialSettings.challengeMode)
+  const [soundEffects, setSoundEffects] = useState(initialSettings.soundEffects)
+  const [roundSize, setRoundSize] = useState(initialSettings.roundSize)
   const [position, setPosition] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [hintVisible, setHintVisible] = useState(false)
@@ -240,7 +302,11 @@ export default function App() {
   const [challengeStarted, setChallengeStarted] = useState(false)
   const [challengeDone, setChallengeDone] = useState(false)
   const [rememberedCount, setRememberedCount] = useState(0)
-  const [missedCount, setMissedCount] = useState(0)
+  const [missedIds, setMissedIds] = useState<number[]>([])
+  // A limited round covers words [roundStart, roundStart + roundSize) of the filtered order.
+  const [roundStart, setRoundStart] = useState(0)
+  const [roundPoolSize, setRoundPoolSize] = useState(0)
+  const [retryRound, setRetryRound] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Card | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
@@ -272,6 +338,8 @@ export default function App() {
   }, [])
 
   useEffect(() => { if (hasSnapshot) writeCachedCards(cards) }, [cards, hasSnapshot])
+  useEffect(() => { document.title = `${view === 'library' ? 'คลังคำศัพท์' : view === 'study' ? 'อ่านบัตรคำ' : 'Challenge'} · ${appName}` }, [view])
+  useEffect(() => { writeSettings({ firstLanguage, challengeMode, soundEffects, shuffled, roundSize }) }, [firstLanguage, challengeMode, soundEffects, shuffled, roundSize])
 
   const filtered = useMemo(() => filterCards(cards, letter, reviewOnly), [cards, letter, reviewOnly])
   const partOptions = useMemo(() => [...new Set([...cards.flatMap(card => card.partsOfSpeech.map(part => part.trim().toLowerCase())), ...(partFilter === 'ALL' ? [] : [partFilter])])].filter(Boolean).sort(), [cards, partFilter])
@@ -288,19 +356,36 @@ export default function App() {
   const progressPosition = view === 'challenge' && !challengeStarted ? 0 : progressTotal ? Math.min(position, progressTotal - 1) + 1 : 0
   const progressPercent = view === 'challenge' && challengeDone ? 100 : progressTotal ? progressPosition / progressTotal * 100 : 0
 
-  function startChallengeSession(nextLetter = letter, nextReviewOnly = reviewOnly, nextShuffled = shuffled, nextSeed = shuffleRun) {
-    const selected = filterCards(cards, nextLetter, nextReviewOnly)
-    const ordered = nextShuffled ? shuffleCards(selected, seeded(nextSeed)) : selected
-    setChallengeIds(ordered.map(card => card.id))
-    setChallengeStarted(false)
+  function beginRound(ids: number[], started: boolean, retry = false) {
+    setChallengeIds(ids)
+    setChallengeStarted(started)
     setChallengeDone(false)
     setRememberedCount(0)
-    setMissedCount(0)
+    setMissedIds([])
+    setRetryRound(retry)
     setChallengeRun(value => value + 1)
     setPosition(0)
     setFlipped(false)
     setHintVisible(false)
   }
+  function startChallengeSession(overrides: Partial<{ letter: string; reviewOnly: boolean; shuffled: boolean; seed: number; size: number; start: number }> = {}, started = false) {
+    const options = { letter, reviewOnly, shuffled, seed: shuffleRun, size: roundSize, start: 0, ...overrides }
+    const selected = filterCards(cards, options.letter, options.reviewOnly)
+    const ordered = options.shuffled ? shuffleCards(selected, seeded(options.seed)) : selected
+    const start = options.start < ordered.length ? options.start : 0
+    setRoundStart(start)
+    setRoundPoolSize(ordered.length)
+    beginRound((options.size ? ordered.slice(start, start + options.size) : ordered).map(card => card.id), started)
+  }
+  // Starting over reshuffles, so a limited round does not repeat the same words.
+  function restartChallenge() {
+    if (!shuffled) { startChallengeSession(); return }
+    const seed = Date.now()
+    setShuffleRun(seed)
+    startChallengeSession({ seed })
+  }
+  function nextChallengeBatch() { startChallengeSession({ start: roundStart + roundSize }, true) }
+  function retryMissed() { beginRound(shuffled ? shuffleCards(missedIds) : missedIds, true, true) }
 
   // Changing settings mid-round restarts the challenge, so ask before throwing away answered words.
   function guardChallenge(action: () => void) {
@@ -317,11 +402,12 @@ export default function App() {
     })
   }
   function changeChallengeMode(mode: ChallengeMode) { if (mode !== challengeMode) guardChallenge(() => { setChallengeMode(mode); startChallengeSession() }) }
-  function changeLetter(value: string) { guardChallenge(() => { setLetter(value); resetLibraryList(); if (view === 'challenge') startChallengeSession(value); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
-  function changeReviewOnly(value: boolean) { guardChallenge(() => { setReviewOnly(value); resetLibraryList(); if (view === 'challenge') startChallengeSession(letter, value); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
-  function toggleShuffle() { guardChallenge(() => { const next = !shuffled; const seed = Date.now(); setShuffled(next); setShuffleRun(seed); if (view === 'challenge') startChallengeSession(letter, reviewOnly, next, seed); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
-  function reshuffle() { guardChallenge(() => { const seed = Date.now(); setShuffleRun(seed); if (view === 'challenge') startChallengeSession(letter, reviewOnly, shuffled, seed); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
-  function changeFirstLanguage(value: 'ENG' | 'THAI') { setFirstLanguage(value); setFlipped(false); setHintVisible(false) }
+  function changeRoundSize(value: string) { const size = Number(value); if (size !== roundSize) guardChallenge(() => { setRoundSize(size); startChallengeSession({ size }) }) }
+  function changeLetter(value: string) { guardChallenge(() => { setLetter(value); resetLibraryList(); if (view === 'challenge') startChallengeSession({ letter: value }); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
+  function changeReviewOnly(value: boolean) { guardChallenge(() => { setReviewOnly(value); resetLibraryList(); if (view === 'challenge') startChallengeSession({ reviewOnly: value }); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
+  function toggleShuffle() { guardChallenge(() => { const next = !shuffled; const seed = Date.now(); setShuffled(next); setShuffleRun(seed); if (view === 'challenge') startChallengeSession({ shuffled: next, seed }); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
+  function reshuffle() { guardChallenge(() => { const seed = Date.now(); setShuffleRun(seed); if (view === 'challenge') startChallengeSession({ seed }); else { setPosition(0); setFlipped(false); setHintVisible(false) } }) }
+  function changeFirstLanguage(value: Language) { setFirstLanguage(value); setFlipped(false); setHintVisible(false) }
   function navigate(next: number) { setPosition(next); setFlipped(false); setHintVisible(false) }
   function restartStudy() { setPosition(0); setFlipped(false); setHintVisible(false); if (shuffled) reshuffle() }
   function openNew() { setEditing(null); setEditorOpen(true) }
@@ -375,7 +461,7 @@ export default function App() {
       updateCards(previous => previous.map(card => card.id === saved.id ? saved : card))
     }
     if (remembered) setRememberedCount(value => value + 1)
-    else setMissedCount(value => value + 1)
+    else setMissedIds(previous => [...previous, challengeCard.id])
     if (position + 1 >= challengeIds.length) setChallengeDone(true)
     else setPosition(value => value + 1)
   }
@@ -452,15 +538,17 @@ export default function App() {
 
   const pageTitle = view === 'library' ? 'คลังคำศัพท์ของฉัน' : view === 'study' ? 'ฝึกจำคำศัพท์' : 'Challenge'
   const navItems = [['library', 'คลังคำศัพท์', BookOpen], ['study', 'อ่านบัตรคำ', Layers3], ['challenge', 'Challenge', Target]] as const
-  const showLanguage = view === 'study' || challengeMode === 'meaning'
+  const showLanguage = view === 'study' || challengeMode === 'meaning' || challengeMode === 'choice'
   const showProgress = view === 'study' || challengeStarted
+  const missedWords = missedIds.map(id => cards.find(card => card.id === id)).filter((card): card is Card => card !== undefined)
+  const hasNextBatch = roundSize > 0 && roundStart + roundSize < roundPoolSize
   const frontText = current ? firstLanguage === 'ENG' ? current.word : current.meaning : ''
   const backText = current ? firstLanguage === 'ENG' ? current.meaning : current.word : ''
 
   return <div className="min-h-screen bg-[#f4f8f7] text-slate-700">
     <div className="flex min-h-screen w-full">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white px-4 py-7 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:self-start xl:w-64 xl:px-5">
-        <div className="flex items-center gap-3 px-2"><img src="/wordly-mark.svg" alt="" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-teal-100" /><div><div className="text-xl font-bold tracking-tight text-slate-900">wordly<span className="text-teal-700">.</span></div><div className="-mt-1 text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500">flash cards</div></div></div>
+        <div className="flex items-center gap-3 px-2"><img src="/wordly-mark.svg" alt="" className="h-10 w-10 shrink-0 rounded-2xl shadow-md shadow-teal-100" /><div className="min-w-0"><div className="text-lg font-bold leading-tight tracking-tight text-slate-900">{appName}</div><div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[.14em] text-slate-500">English · Thai</div></div></div>
         <div className="mt-10 px-3 text-xs font-semibold text-slate-500">เมนูหลัก</div>
         <nav className="mt-3 space-y-1" aria-label="เมนูหลัก">
           {navItems.map(([key, label, Icon]) => <button key={key} aria-current={view === key ? 'page' : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold ${view === key ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-50'}`} onClick={() => goTo(key)}><Icon size={18} />{label}</button>)}
@@ -471,7 +559,7 @@ export default function App() {
 
       <main className="min-h-screen min-w-0 flex-1">
         <div className="sticky top-0 z-30 lg:static">
-          <header className="flex h-16 items-center justify-between border-b border-slate-200/80 bg-white px-4 sm:px-6 lg:h-20 lg:px-10"><div className="flex min-w-0 items-center gap-3"><img src="/wordly-mark.svg" alt="" className="h-9 w-9 shrink-0 lg:hidden" /><div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 lg:hidden">wordly</p><h1 className="truncate text-lg font-bold text-slate-900">{pageTitle}</h1></div></div><Button onClick={openNew} size="sm" className="h-9 shrink-0"><Plus size={16} /> <span className="hidden sm:inline">เพิ่มคำศัพท์</span><span className="sm:hidden">เพิ่ม</span></Button></header>
+          <header className="flex h-16 items-center justify-between border-b border-slate-200/80 bg-white px-4 sm:px-6 lg:h-20 lg:px-10"><div className="flex min-w-0 items-center gap-3"><img src="/wordly-mark.svg" alt="" className="h-9 w-9 shrink-0 lg:hidden" /><div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 lg:hidden">{appName}</p><h1 className="truncate text-lg font-bold text-slate-900">{pageTitle}</h1></div></div><Button onClick={openNew} size="sm" className="h-9 shrink-0"><Plus size={16} /> <span className="hidden sm:inline">เพิ่มคำศัพท์</span><span className="sm:hidden">เพิ่ม</span></Button></header>
           <nav aria-label="เมนูหลัก" className="grid grid-cols-3 gap-1 border-b border-slate-200 bg-white px-2 py-1.5 lg:hidden">{navItems.map(([key, label, Icon]) => <button key={key} onClick={() => goTo(key)} aria-current={view === key ? 'page' : undefined} className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-semibold ${view === key ? 'bg-teal-50 text-teal-800' : 'text-slate-600'}`}><Icon size={16} className="shrink-0" />{label}</button>)}</nav>
         </div>
         <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
@@ -512,21 +600,23 @@ export default function App() {
             </div>}
             </>}
           </> : <div className="mx-auto max-w-3xl">
-            {(view !== 'challenge' || !challengeStarted) && <div className="mb-5"><h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{view === 'challenge' ? 'ท้าทายความจำ' : 'ฝึกจำทีละใบ'}</h2><p className="mt-1 text-sm text-slate-500">{view === 'challenge' ? 'ฝึกพิมพ์คำศัพท์ ฟังเสียง หรือทบทวนความหมายทีละคำ' : 'พลิกบัตรเพื่อเฉลย และเก็บคำที่ยังจำไม่ได้ไว้ทบทวน'}</p></div>}
-            {view === 'challenge' && <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label="รูปแบบ Challenge">{([['copy', 'เห็นคำแล้วพิมพ์'], ['listen', 'ฟังแล้วพิมพ์'], ['meaning', 'ทบทวนความหมาย']] as const).map(([mode, label]) => <button key={mode} type="button" aria-pressed={challengeMode === mode} onClick={() => changeChallengeMode(mode)} className={`whitespace-nowrap rounded-xl border px-1 py-2 text-[12px] font-semibold sm:px-2 sm:text-sm ${challengeMode === mode ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200'}`}>{label}</button>)}</div>}
+            {(view !== 'challenge' || !challengeStarted) && <div className="mb-5"><h2 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{view === 'challenge' ? 'ท้าทายความจำ' : 'ฝึกจำทีละใบ'}</h2><p className="mt-1 text-sm text-slate-500">{view === 'challenge' ? 'ฝึกพิมพ์ ฟังเสียง ทบทวนความหมาย หรือทำข้อสอบแบบเลือกตอบทีละคำ' : 'พลิกบัตรเพื่อเฉลย และเก็บคำที่ยังจำไม่ได้ไว้ทบทวน'}</p></div>}
+            {view === 'challenge' && <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="รูปแบบ Challenge">{([['copy', 'เห็นคำแล้วพิมพ์'], ['listen', 'ฟังแล้วพิมพ์'], ['meaning', 'ทบทวนความหมาย'], ['choice', 'เลือกคำตอบ']] as const).map(([mode, label]) => <button key={mode} type="button" aria-pressed={challengeMode === mode} onClick={() => changeChallengeMode(mode)} className={`whitespace-nowrap rounded-xl border px-1 py-2 text-sm font-semibold sm:px-2 ${challengeMode === mode ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-600 hover:border-teal-200'}`}>{label}</button>)}</div>}
             <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm sm:gap-3 sm:p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-600"><label htmlFor="letter-filter">หมวดอักษร</label><Select id="letter-filter" label="หมวดอักษร" value={letter} onValueChange={changeLetter} options={[{ value: 'ALL', label: 'ทั้งหมด' }, ...alphabet.map(item => ({ value: item, label: item }))]} className="w-28" /></div>
               <button aria-pressed={reviewOnly} onClick={() => changeReviewOnly(!reviewOnly)} className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold ${reviewOnly ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'}`}><Star size={16} fill={reviewOnly ? 'currentColor' : 'none'} /> ต้องทบทวน</button>
               <button aria-pressed={shuffled} onClick={toggleShuffle} className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold ${shuffled ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600'}`}><Shuffle size={16} /> สุ่มคำ {shuffled ? 'เปิด' : 'ปิด'}</button>
               {shuffled && <Button variant="ghost" size="sm" onClick={reshuffle}><RotateCcw size={15} /> สุ่มใหม่</Button>}
-              {showLanguage && <div className="sm:ml-auto"><LanguageToggle label={view === 'study' ? 'ด้านหน้า' : 'คำถาม'} value={firstLanguage} onChange={changeFirstLanguage} /></div>}
+              {view === 'challenge' ? <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-3"><div className="flex items-center gap-2 text-sm font-semibold text-slate-600"><label htmlFor="round-size">คำต่อรอบ</label><Select id="round-size" label="จำนวนคำต่อรอบ" value={String(roundSize)} onValueChange={changeRoundSize} options={roundSizes.map(size => ({ value: String(size), label: size ? `${size} คำ` : 'ทุกคำ' }))} className="w-28" /></div>{showLanguage && <LanguageToggle label="คำถาม" value={firstLanguage} onChange={changeFirstLanguage} />}</div> : showLanguage && <div className="sm:ml-auto"><LanguageToggle label="ด้านหน้า" value={firstLanguage} onChange={changeFirstLanguage} /></div>}
             </div>
-            {showProgress && <><div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600"><span>{view === 'challenge' ? 'คำที่' : 'บัตรที่'} {progressPosition} จาก {progressTotal}</span><span>{letter === 'ALL' ? 'ทุกหมวด' : `หมวด ${letter}`}{reviewOnly ? ' · ต้องทบทวน' : ''}</span></div><div className="mb-4 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progressPercent}%` }} /></div></>}
+            {showProgress && <><div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600"><span>{view === 'challenge' ? 'คำที่' : 'บัตรที่'} {progressPosition} จาก {progressTotal}</span><span>{view === 'challenge' && retryRound ? 'ฝึกคำที่ยังจำไม่ได้' : <>{letter === 'ALL' ? 'ทุกหมวด' : `หมวด ${letter}`}{reviewOnly ? ' · ต้องทบทวน' : ''}</>}</span></div><div className="mb-4 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progressPercent}%` }} /></div></>}
             {view === 'challenge' ? (
               challengeIds.length === 0 ? <Empty icon={<Target size={28} />} title="ยังไม่มีคำสำหรับ Challenge" description="ลองเปลี่ยนหมวดอักษรหรือปิดตัวกรองคำที่ต้องทบทวน" action={<Button variant="secondary" onClick={() => goTo('library')}>ไปคลังคำศัพท์</Button>} /> :
-              challengeDone ? <div className="rounded-2xl border border-teal-100 bg-white px-6 py-12 text-center shadow-sm"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-50 text-teal-700"><Target size={28} /></div><h3 className="mt-5 text-2xl font-bold text-slate-900">จบรอบ Challenge</h3><p className="mt-2 text-sm text-slate-600">จำได้ {rememberedCount} คำ · ยังจำไม่ได้ {missedCount} คำ</p><Button className="mt-6" onClick={() => startChallengeSession()}><RotateCcw size={17} /> เริ่มรอบใหม่</Button></div> :
-              !challengeStarted ? <div className="flex min-h-64 flex-col items-center justify-center rounded-[28px] border border-teal-100 bg-gradient-to-br from-white to-teal-50 px-6 py-10 text-center shadow-sm"><div className="rounded-2xl bg-teal-100 p-4 text-teal-700"><Target size={28} /></div><h3 className="mt-5 text-xl font-bold text-slate-900">พร้อมฝึก {challengeIds.length} คำ</h3><p className="mt-2 text-sm text-slate-600">{letter === 'ALL' ? 'ทุกหมวด' : `หมวด ${letter}`}{reviewOnly ? ' · เฉพาะคำที่ต้องทบทวน' : ''} · {challengeMode === 'meaning' ? 'กดเริ่มเมื่อพร้อมทบทวนความหมาย' : 'เสียงคำศัพท์จะเล่นหลังจากกดเริ่ม'}</p><Button className="mt-6" onClick={() => setChallengeStarted(true)}>เริ่ม Challenge <ArrowRight size={17} /></Button></div> :
-              challengeCard ? <ChallengePanel key={challengeRun + '-' + challengeCard.id + '-' + firstLanguage + '-' + challengeMode} card={challengeCard} mode={challengeMode} firstLanguage={firstLanguage} soundEffects={soundEffects} onToggleSoundEffects={() => setSoundEffects(value => !value)} onAssess={assessChallenge} /> :
+              challengeDone ? <div className="rounded-2xl border border-teal-100 bg-white px-5 py-10 text-center shadow-sm sm:px-8"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-50 text-teal-700"><Target size={28} /></div><h3 className="mt-5 text-2xl font-bold text-slate-900">จบรอบ Challenge</h3><p className="mt-2 text-sm text-slate-600">จำได้ {rememberedCount} คำ · ยังจำไม่ได้ {missedIds.length} คำ</p>
+                {missedWords.length > 0 && <div className="mx-auto mt-6 max-w-lg text-left"><h4 className="text-sm font-bold text-slate-700">คำที่ยังจำไม่ได้</h4><ul aria-label="คำที่ยังจำไม่ได้" className="mt-2 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">{missedWords.map(card => <li key={card.id} className="flex items-baseline gap-3 px-4 py-2.5"><span lang="en" className="shrink-0 font-bold text-slate-900">{card.word}</span><span className="min-w-0 truncate text-sm text-slate-600" title={card.meaning}>{card.meaning}</span></li>)}</ul></div>}
+                <div className="mt-6 flex flex-col-reverse justify-center gap-2 sm:flex-row">{(missedWords.length > 0 || hasNextBatch) && <Button variant="secondary" onClick={restartChallenge}><RotateCcw size={17} /> เริ่มรอบใหม่</Button>}{hasNextBatch && <Button variant={missedWords.length > 0 ? 'secondary' : 'default'} onClick={nextChallengeBatch}>ชุดถัดไป (คำที่ {roundStart + roundSize + 1}–{Math.min(roundStart + 2 * roundSize, roundPoolSize)}) <ArrowRight size={17} /></Button>}{missedWords.length > 0 ? <Button onClick={retryMissed}><Target size={17} /> ฝึกเฉพาะคำที่ผิดอีกรอบ</Button> : !hasNextBatch && <Button onClick={restartChallenge}><RotateCcw size={17} /> เริ่มรอบใหม่</Button>}</div></div> :
+              !challengeStarted ? <div className="flex min-h-64 flex-col items-center justify-center rounded-[28px] border border-teal-100 bg-gradient-to-br from-white to-teal-50 px-6 py-10 text-center shadow-sm"><div className="rounded-2xl bg-teal-100 p-4 text-teal-700"><Target size={28} /></div><h3 className="mt-5 text-xl font-bold text-slate-900">พร้อมฝึก {challengeIds.length} คำ</h3>{challengeIds.length < roundPoolSize && <p className="mt-1 text-sm font-medium text-teal-800">คำที่ {roundStart + 1}–{roundStart + challengeIds.length} จาก {roundPoolSize} คำ{shuffled ? ' (สุ่มลำดับ)' : ''}</p>}<p className="mt-2 text-sm text-slate-600">{letter === 'ALL' ? 'ทุกหมวด' : `หมวด ${letter}`}{reviewOnly ? ' · เฉพาะคำที่ต้องทบทวน' : ''} · {challengeMode === 'meaning' ? 'กดเริ่มเมื่อพร้อมทบทวนความหมาย' : challengeMode === 'choice' ? 'เลือกคำตอบที่ถูกจาก 4 ตัวเลือก' : 'เสียงคำศัพท์จะเล่นหลังจากกดเริ่ม'}</p><Button className="mt-6" onClick={() => setChallengeStarted(true)}>เริ่ม Challenge <ArrowRight size={17} /></Button></div> :
+              challengeCard ? <ChallengePanel key={challengeRun + '-' + challengeCard.id + '-' + firstLanguage + '-' + challengeMode} card={challengeCard} pool={cards} mode={challengeMode} firstLanguage={firstLanguage} soundEffects={soundEffects} onToggleSoundEffects={() => setSoundEffects(value => !value)} onAssess={assessChallenge} /> :
               <Empty icon={<Target size={28} />} title="ไม่พบคำศัพท์" description="กลับไปคลังคำศัพท์แล้วเริ่มรอบใหม่" action={<Button onClick={() => startChallengeSession()}>เริ่มรอบใหม่</Button>} />
             ) : current ? <><div className="study-card h-[300px] cursor-pointer select-none sm:h-[340px]" onClick={() => { setFlipped(value => !value); setHintVisible(false) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setFlipped(value => !value); setHintVisible(false) } }} role="button" tabIndex={0} aria-label="พลิกบัตร" aria-pressed={flipped}><div className="study-card-inner" style={{ transform: flipped ? 'rotateY(180deg)' : undefined }}>
                 <div className="study-face flex flex-col rounded-[28px] border border-teal-100 bg-gradient-to-br from-white via-white to-teal-50 p-5 shadow-[0_16px_50px_-20px_rgba(15,118,110,.18)] sm:p-7"><div className="flex items-start justify-between gap-3"><span className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700">{firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}</span><span className="text-xs font-medium text-slate-500">ด้านหน้า</span></div><div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain py-3"><div className="my-auto flex flex-col items-center text-center"><span data-testid="front-value" lang={firstLanguage === 'ENG' ? 'en' : 'th'} className={`max-w-full break-words font-bold leading-tight text-slate-900 ${fitTextClass(frontText)}`}>{frontText}</span>{firstLanguage === 'ENG' && <PartBadges parts={current.partsOfSpeech} className="mt-3" />}{hintVisible && current.hint && <span role="status" className="mt-4 max-w-[95%] rounded-xl bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800"><Lightbulb size={16} className="mr-1 inline-block" />{current.hint}</span>}</div></div><span className="text-center text-xs font-medium text-slate-500">แตะหรือคลิกเพื่อดูเฉลย</span></div>

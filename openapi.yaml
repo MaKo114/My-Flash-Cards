@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: my-flash-card API
+  title: My Flash Cards API
   version: 1.0.0
   description: |
     API สำหรับคลังคำศัพท์ชุดเดียว หนึ่งคำสะกดมีหนึ่งบัตรและเก็บชนิดของคำ

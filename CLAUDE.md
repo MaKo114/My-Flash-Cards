@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-เว็บ flash card คำศัพท์อังกฤษ–ไทย (ชื่อแอป wordly) รายละเอียดการใช้งานอยู่ใน [README.md](README.md) ความต้องการเดิมอยู่ใน [context.md](context.md)
+เว็บ flash card คำศัพท์อังกฤษ–ไทย (ชื่อแอป My Flash Cards) รายละเอียดการใช้งานอยู่ใน [README.md](README.md) ความต้องการเดิมอยู่ใน [context.md](context.md)
 
 ## กฎของโปรเจกต์
 
