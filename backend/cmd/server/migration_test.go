@@ -112,11 +112,28 @@ func TestGroupLegacyCardsMigration(t *testing.T) {
 	if err != nil || answered.SRSStep != 0 || *answered.DueOn != "2026-11-03" || answered.WrongCount != 1 || !answered.NeedsReview {
 		t.Fatalf("wrong answer did not restart the schedule: %#v, %v", answered, err)
 	}
+	if answered.FirstStudiedOn == nil || *answered.FirstStudiedOn != "2026-11-03" {
+		t.Fatalf("first answer day was not kept: %#v", answered)
+	}
+	later, err := repo.RecordAnswer(ctx, cards[0].ID, true, today.AddDate(0, 0, 2))
+	if err != nil || *later.FirstStudiedOn != "2026-11-03" {
+		t.Fatalf("later answers must not move the first study day: %#v, %v", later, err)
+	}
+	failures := postgres.NewLoginFailures(pool)
+	now := time.Now()
+	for _, ip := range []string{"10.0.0.1", "10.0.0.1", "10.0.0.2"} {
+		if err := failures.Record(ctx, ip, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if forIP, total, err := failures.Recent(ctx, "10.0.0.1", now.Add(-time.Minute)); err != nil || forIP != 2 || total != 3 {
+		t.Fatalf("unexpected failure counts: %d %d %v", forIP, total, err)
+	}
 	if _, err := repo.RecordAnswer(ctx, 999999, true, today); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for a missing card, got %v", err)
 	}
 	days, err := repo.StudyDays(ctx)
-	if err != nil || len(days) != 1 || days[0] != (domain.StudyDay{Date: "2026-11-03", Answers: 2, Correct: 1}) {
+	if err != nil || len(days) != 2 || days[1] != (domain.StudyDay{Date: "2026-11-03", Answers: 2, Correct: 1}) {
 		t.Fatalf("unexpected study days: %#v, %v", days, err)
 	}
 	if err := repo.Delete(ctx, cards[1].ID); err != nil {

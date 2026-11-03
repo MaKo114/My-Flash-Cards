@@ -62,7 +62,7 @@ func call(t *testing.T, app *fiber.App, method, path, body, token, ip string) (i
 }
 
 func TestNoPasswordLeavesAPIOpen(t *testing.T) {
-	app := testApp(NewAuth(""))
+	app := testApp(NewAuth("", nil))
 	if status, _ := call(t, app, "GET", "/api/cards", "", "", ""); status != 200 {
 		t.Fatalf("expected open API, got %d", status)
 	}
@@ -72,7 +72,7 @@ func TestNoPasswordLeavesAPIOpen(t *testing.T) {
 }
 
 func TestPasswordProtectsAPI(t *testing.T) {
-	app := testApp(NewAuth("correct horse"))
+	app := testApp(NewAuth("correct horse", NewMemoryFailures()))
 	if status, _ := call(t, app, "GET", "/api/health", "", "", ""); status != 200 {
 		t.Fatalf("health must stay public, got %d", status)
 	}
@@ -96,13 +96,13 @@ func TestPasswordProtectsAPI(t *testing.T) {
 	if _, body := call(t, app, "GET", "/api/session", "", token, ""); body["authRequired"] != true || body["authenticated"] != true {
 		t.Fatalf("unexpected session: %v", body)
 	}
-	if NewAuth("another password").Valid(token, time.Now()) {
+	if NewAuth("another password", nil).Valid(token, time.Now()) {
 		t.Fatal("changing the password must invalidate old sessions")
 	}
 }
 
 func TestTokensExpire(t *testing.T) {
-	auth := NewAuth("secret")
+	auth := NewAuth("secret", nil)
 	now := time.Now()
 	token := auth.Token(now)
 	if !auth.Valid(token, now.Add(29*24*time.Hour)) || auth.Valid(token, now.Add(31*24*time.Hour)) {
@@ -111,7 +111,7 @@ func TestTokensExpire(t *testing.T) {
 }
 
 func TestLoginIsRateLimited(t *testing.T) {
-	app := testApp(NewAuth("secret"))
+	app := testApp(NewAuth("secret", NewMemoryFailures()))
 	for attempt := 0; attempt < failuresPerIP; attempt++ {
 		call(t, app, "POST", "/api/login", `{"password":"guess"}`, "", "10.0.0.2")
 	}

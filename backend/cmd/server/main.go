@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"my-flash-cards/backend/internal/application"
@@ -36,7 +37,9 @@ func main() {
 		log.Fatal(err)
 	}
 	app := fiber.New(fiber.Config{BodyLimit: 6 << 20})
-	httpapi.New(application.New(postgres.New(pool)), httpapi.NewAuth(os.Getenv("APP_PASSWORD"))).Register(app)
+	// The card list is the largest response; gzip makes it several times smaller on slow mobile networks.
+	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
+	httpapi.New(application.New(postgres.New(pool)), httpapi.NewAuth(os.Getenv("APP_PASSWORD"), postgres.NewLoginFailures(pool))).Register(app)
 	addr := os.Getenv("LISTEN_ADDR")
 	if port := os.Getenv("PORT"); port != "" {
 		addr = ":" + port

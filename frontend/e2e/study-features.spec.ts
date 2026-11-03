@@ -37,16 +37,16 @@ test('schedules reviews, shows statistics and round-trips CSV export', async ({ 
   await page.goto('/')
   const sidebar = page.locator('aside')
   await expect(sidebar.getByText('ถึงกำหนดทบทวน')).toBeVisible()
-  await sidebar.getByRole('button', { name: 'ทบทวนเลย' }).click()
+  await sidebar.getByRole('button', { name: 'ฝึกวันนี้ (1 คำ)' }).click()
   await expect(page.getByText('พร้อมฝึก 1 คำ')).toBeVisible()
-  await expect(page.getByRole('button', { name: /ถึงกำหนด 1/ })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'เลือกคำตอบ' }).click()
+  await expect(page.getByText('พร้อมฝึก 1 คำ')).toBeVisible()
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   await expect(page.getByTestId('challenge-prompt')).toHaveText('Apple')
   await page.getByTestId('choice').filter({ hasText: 'แอปเปิล' }).click()
   await expect(page.getByText('An apple a day keeps the doctor away.')).toBeVisible()
   await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
-  await page.getByRole('button', { name: /ถึงกำหนด 0/ }).click()
+  await expect(page.getByRole('button', { name: /ถึงกำหนด 0/ })).toBeVisible()
 
   await page.getByRole('button', { name: 'สถิติ' }).first().click()
   await expect(page).toHaveTitle('สถิติ · My Flash Cards')
@@ -86,6 +86,7 @@ test('mobile rows swipe to edit or delete and the challenge settings fold away',
   await expect(editApple).toHaveCount(1)
   const row = page.locator('[data-swipe-row]').filter({ hasText: 'Apple' })
   async function swipe(dx: number) {
+    await row.scrollIntoViewIfNeeded()
     const box = (await row.boundingBox())!
     const y = box.y + box.height / 2
     await page.mouse.move(box.x + box.width - 40, y)
@@ -114,7 +115,7 @@ test('mobile rows swipe to edit or delete and the challenge settings fold away',
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   await expect(page.getByRole('button', { name: 'เลือกคำตอบ' })).toBeHidden()
   await expect(page.getByTestId('challenge-prompt')).toBeInViewport()
-  await page.getByRole('button', { name: 'ตั้งค่า' }).click()
+  await page.getByRole('button', { name: 'ตั้งค่ารอบ' }).click()
   await expect(page.getByRole('button', { name: 'เลือกคำตอบ' })).toBeVisible()
   await page.getByRole('button', { name: 'ซ่อน' }).click()
   await expect(page.getByRole('button', { name: 'เลือกคำตอบ' })).toBeHidden()
@@ -148,4 +149,71 @@ test('asks for the password and signs in', async ({ page }) => {
   await page.getByRole('button', { name: 'คลังคำศัพท์' }).first().click()
   await page.reload()
   await expect(page.getByLabel('รหัสผ่าน')).toBeVisible()
+})
+
+test('settings, dark theme, daily practice with new words and editing from a challenge', async ({ page, request }) => {
+  await reset(request, [
+    { word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล' },
+    { word: 'Book', partOfSpeech: 'noun', meaning: 'หนังสือ' },
+    { word: 'Cat', partOfSpeech: 'noun', meaning: 'แมว' },
+  ])
+  // Answers logged by earlier tests stay in the study history, so count from what is there today.
+  const before = (await (await request.get(`${api}/study-days`)).json() as { date: string; answers: number }[]).find(day => day.date === localDay())?.answers ?? 0
+  await page.goto('/')
+  await expect(page.locator('aside').getByRole('button', { name: 'ฝึกวันนี้ (3 คำ)' })).toBeVisible()
+
+  await page.locator('aside').getByRole('button', { name: 'ตั้งค่า' }).click()
+  const settings = page.getByRole('dialog')
+  await settings.getByRole('combobox', { name: 'คำใหม่ต่อวัน' }).click()
+  await page.getByRole('option', { name: '5 คำ', exact: true }).click()
+  await settings.getByRole('combobox', { name: 'เป้าหมายต่อวัน' }).click()
+  await page.getByRole('option', { name: '10 คำ', exact: true }).click()
+  await settings.getByRole('button', { name: 'มืด' }).click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('aside')).toContainText(`${before} / 10 คำ`)
+
+  await page.reload()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  const background = await page.locator('body > #root > div').evaluate(element => getComputedStyle(element).backgroundColor)
+  expect(background).not.toBe('rgb(244, 248, 247)')
+
+  await page.locator('aside').getByRole('button', { name: 'ฝึกวันนี้ (3 คำ)' }).click()
+  await expect(page.getByText('พร้อมฝึก 3 คำ')).toBeVisible()
+  await expect(page.getByText(/ฝึกวันนี้ ·/)).toBeVisible()
+  await page.getByRole('button', { name: 'ทบทวนความหมาย' }).click()
+  await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Apple')
+  await page.getByRole('button', { name: 'แก้ไขคำนี้' }).click()
+  await page.getByLabel('ความหมายภาษาไทย').fill('ผลแอปเปิล')
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await page.getByRole('button', { name: 'ดูเฉลย' }).click()
+  await expect(page.getByText('ผลแอปเปิล', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'จำได้', exact: true }).click()
+  await expect(page.getByTestId('challenge-prompt')).toHaveText('Book')
+  await expect(page.locator('aside')).toContainText(`${before + 1} / 10 คำ`)
+  await expect(page.locator('aside')).toContainText('คำใหม่ 2')
+})
+
+test('the next question appears without waiting for the server to save', async ({ page, request }) => {
+  await reset(request, [
+    { word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล' },
+    { word: 'Book', partOfSpeech: 'noun', meaning: 'หนังสือ' },
+  ])
+  let release: (() => void) | undefined
+  await page.route('**/api/cards/*/answer', async route => {
+    await new Promise<void>(resolve => { release = resolve })
+    await route.continue()
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Challenge', exact: true }).click()
+  await page.getByRole('button', { name: 'เห็นคำแล้วพิมพ์' }).click()
+  await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').fill('apple')
+  await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
+  // The save is still held back by the route above, yet the round has moved on.
+  await expect(page.getByText('คำที่ 2 จาก 2')).toBeVisible({ timeout: 1500 })
+  release?.()
+  await expect.poll(async () => (await (await request.get(`${api}/cards`)).json() as { word: string; correctCount: number }[]).find(card => card.word === 'Apple')?.correctCount).toBe(1)
 })

@@ -3,11 +3,12 @@ import { CalendarCheck, Flame, Target, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isDue, localDay, memoryLevel, studyStreak, type Card, type MemoryLevel, type StudyDay } from '@/lib/cards'
 
+// One teal ramp from pale (new) to deep (mastered); in dark mode it runs from dim to bright instead.
 const levels: { key: MemoryLevel; label: string; description: string; color: string }[] = [
-  { key: 'new', label: 'ยังไม่เคยฝึก', description: 'ยังไม่เคยตอบใน Challenge', color: 'bg-teal-100' },
-  { key: 'learning', label: 'กำลังจำ', description: 'เพิ่งเริ่ม หรือเพิ่งตอบผิด', color: 'bg-teal-300' },
-  { key: 'familiar', label: 'เริ่มคุ้น', description: 'ตอบถูกติดกัน 2–3 ครั้ง', color: 'bg-teal-600' },
-  { key: 'mastered', label: 'จำได้แม่น', description: 'ตอบถูกติดกัน 4 ครั้งขึ้นไป', color: 'bg-teal-800' },
+  { key: 'new', label: 'ยังไม่เคยฝึก', description: 'ยังไม่เคยตอบใน Challenge', color: 'bg-teal-100 dark:bg-[#134e4a]' },
+  { key: 'learning', label: 'กำลังจำ', description: 'เพิ่งเริ่ม หรือเพิ่งตอบผิด', color: 'bg-teal-300 dark:bg-[#0f766e]' },
+  { key: 'familiar', label: 'เริ่มคุ้น', description: 'ตอบถูกติดกัน 2–3 ครั้ง', color: 'bg-teal-600 dark:bg-[#14b8a6]' },
+  { key: 'mastered', label: 'จำได้แม่น', description: 'ตอบถูกติดกัน 4 ครั้งขึ้นไป', color: 'bg-teal-800 dark:bg-[#99f6e4]' },
 ]
 
 const shortDate = new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' })
@@ -23,7 +24,7 @@ function percent(part: number, whole: number) {
 }
 
 function Tile({ icon, label, value, unit, note, action }: { icon: React.ReactNode; label: string; value: number | string; unit?: string; note?: string; action?: React.ReactNode }) {
-  return <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
+  return <div className="flex flex-col rounded-2xl border border-slate-200/80 bg-surface p-4 shadow-sm sm:p-5">
     <div className="flex items-center gap-2 text-sm font-medium text-slate-600">{icon}{label}</div>
     <p className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">{value}{unit && <span className="ml-1.5 text-sm font-medium text-slate-500">{unit}</span>}</p>
     {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
@@ -58,7 +59,16 @@ function MemoryBar({ cards }: { cards: Card[] }) {
   </div>
 }
 
-export function StatsView({ cards, days, loading, error, onReviewDue }: { cards: Card[]; days: StudyDay[]; loading: boolean; error: string; onReviewDue: () => void }) {
+// "สถิติ": streak, today's answers against the goal, a 14-day chart, memory levels and hard words.
+export function StatsView({ cards, days, loading, error, dailyGoal, onReviewDue, footer }: {
+  cards: Card[]
+  days: StudyDay[]
+  loading: boolean
+  error: string
+  dailyGoal: number
+  onReviewDue: () => void
+  footer?: React.ReactNode
+}) {
   const today = localDay()
   const todayStats = days.find(day => day.date === today)
   const answers = days.reduce((sum, day) => sum + day.answers, 0)
@@ -72,14 +82,15 @@ export function StatsView({ cards, days, loading, error, onReviewDue }: { cards:
     {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
     <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       <Tile icon={<Flame size={16} className="text-orange-500" />} label="ฝึกต่อเนื่อง" value={loading ? '–' : streak} unit="วัน" note={todayStats ? 'วันนี้ฝึกแล้ว' : streak ? 'ฝึกวันนี้เพื่อไม่ให้ขาด' : 'เริ่มฝึกวันนี้'} />
-      <Tile icon={<Target size={16} className="text-teal-700" />} label="วันนี้ตอบ" value={loading ? '–' : todayStats?.answers ?? 0} unit="คำ" note={todayStats ? `ถูก ${percent(todayStats.correct, todayStats.answers)}%` : undefined} />
+      <Tile icon={<Target size={16} className="text-teal-700" />} label="วันนี้ตอบ" value={loading ? '–' : todayStats?.answers ?? 0} unit="คำ" note={[dailyGoal ? `เป้าหมาย ${dailyGoal} คำ` : '', todayStats ? `ถูก ${percent(todayStats.correct, todayStats.answers)}%` : ''].filter(Boolean).join(' · ') || undefined} />
       <Tile icon={<CalendarCheck size={16} className="text-amber-600" />} label="ถึงกำหนดทบทวน" value={due} unit="คำ" action={due > 0 ? <Button size="sm" onClick={onReviewDue}>ทบทวนเลย</Button> : <p className="text-xs text-slate-500">ไม่มีคำค้างทบทวน</p>} />
       <Tile icon={<TrendingUp size={16} className="text-teal-700" />} label="ตอบถูกรวม" value={loading ? '–' : `${percent(correct, answers)}%`} note={`จาก ${answers} คำตอบ`} />
     </div>
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">จำนวนคำที่ตอบ 14 วันล่าสุด</h3><div className="mt-3"><ActivityChart days={days} today={today} /></div></section>
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">ระดับความจำ</h3><p className="mt-1 text-xs text-slate-500">ตอบถูกครั้งต่อไปจะเว้นนานขึ้นก่อนถามซ้ำ: 1, 3, 7, 14, 30 และ 60 วัน ตอบผิดจะกลับไปเริ่มใหม่</p><div className="mt-4"><MemoryBar cards={cards} /></div></section>
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">คำที่ตอบผิดบ่อย</h3>
+    <section className="rounded-2xl border border-slate-200/80 bg-surface p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">จำนวนคำที่ตอบ 14 วันล่าสุด</h3><div className="mt-3"><ActivityChart days={days} today={today} /></div></section>
+    <section className="rounded-2xl border border-slate-200/80 bg-surface p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">ระดับความจำ</h3><p className="mt-1 text-xs text-slate-500">ตอบถูกครั้งต่อไปจะเว้นนานขึ้นก่อนถามซ้ำ: 1, 3, 7, 14, 30 และ 60 วัน ตอบผิดจะกลับไปเริ่มใหม่</p><div className="mt-4"><MemoryBar cards={cards} /></div></section>
+    <section className="rounded-2xl border border-slate-200/80 bg-surface p-4 shadow-sm sm:p-6"><h3 className="text-base font-bold text-slate-900">คำที่ตอบผิดบ่อย</h3>
       {hardest.length === 0 ? <p className="mt-2 text-sm text-slate-500">ยังไม่มีคำที่ตอบผิด</p> : <ol className="mt-3 divide-y divide-slate-100">{hardest.map((card, index) => <li key={card.id} className="flex items-baseline gap-3 py-2.5"><span className="w-5 shrink-0 text-right text-xs font-bold text-slate-400">{index + 1}</span><span lang="en" className="shrink-0 font-bold text-slate-900">{card.word}</span><span className="min-w-0 flex-1 truncate text-sm text-slate-600" title={card.meaning}>{card.meaning}</span><span className="shrink-0 text-xs font-semibold text-rose-700">ผิด {card.wrongCount}</span><span className="shrink-0 text-xs text-slate-500">ถูก {card.correctCount}</span></li>)}</ol>}
     </section>
+    {footer}
   </div>
 }

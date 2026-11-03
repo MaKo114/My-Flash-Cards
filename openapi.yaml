@@ -74,6 +74,7 @@ paths:
       summary: แลก APP_PASSWORD เป็น token ที่ใช้ได้ 30 วัน
       description: |
         ใส่รหัสผ่านผิด 5 ครั้งจากที่อยู่เดียวกัน หรือรวม 50 ครั้งภายใน 15 นาที จะถูกปฏิเสธด้วย 429
+        (นับจากตาราง login_failures ในฐานข้อมูล)
         การเปลี่ยน APP_PASSWORD ทำให้ token เดิมทั้งหมดใช้ไม่ได้
       requestBody:
         required: true
@@ -236,7 +237,8 @@ paths:
       description: |
         ตอบถูกเลื่อน srsStep ขึ้นหนึ่งขั้นและตั้ง dueOn เป็น today บวก 1, 3, 7, 14, 30 หรือ 60 วันตามขั้น
         ตอบผิดตั้ง srsStep เป็น 0 และ dueOn เป็น today
-        พร้อมตั้ง needsReview เป็นค่าตรงข้ามกับ correct นับ correctCount/wrongCount และบันทึกลงประวัติการฝึก
+        พร้อมตั้ง needsReview เป็นค่าตรงข้ามกับ correct นับ correctCount/wrongCount ตั้ง firstStudiedOn เมื่อยังว่าง และบันทึกลงประวัติการฝึก
+        Response ถูกบีบอัด gzip เมื่อ client รองรับ (ใช้กับทุก path)
       requestBody:
         required: true
         content:
@@ -454,7 +456,7 @@ components:
           description: ตัวอย่างประโยค ไม่บังคับ; ค่าเริ่มต้นเป็นข้อความว่าง
     Card:
       type: object
-      required: [id, word, partsOfSpeech, meanings, partOfSpeech, meaning, hint, example, needsReview, srsStep, dueOn, correctCount, wrongCount]
+      required: [id, word, partsOfSpeech, meanings, partOfSpeech, meaning, hint, example, needsReview, srsStep, dueOn, correctCount, wrongCount, firstStudiedOn]
       properties:
         id:
           type: integer
@@ -500,6 +502,11 @@ components:
         wrongCount:
           type: integer
           minimum: 0
+        firstStudiedOn:
+          type: string
+          format: date
+          nullable: true
+          description: วันที่ตอบคำนี้ใน Challenge ครั้งแรก; null เมื่อยังเป็นคำใหม่
       example:
         id: 12
         word: Run
@@ -514,6 +521,7 @@ components:
         dueOn: '2026-11-06'
         correctCount: 4
         wrongCount: 1
+        firstStudiedOn: '2026-10-20'
     StudyDay:
       type: object
       required: [date, answers, correct]

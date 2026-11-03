@@ -11,7 +11,8 @@
 
 ## Stack
 
-- `frontend/`: React + Vite + TypeScript, Tailwind v4, คอมโพเนนต์แบบ shadcn ใน `src/components/ui`, ไอคอน lucide-react UI ส่วนใหญ่อยู่ใน `src/App.tsx` (หน้าสถิติ หน้าเข้าสู่ระบบ และแถวที่ปัดได้แยกอยู่ใน `src/components/`) ฟังก์ชันล้วนอยู่ใน `src/lib/cards.ts`
+- `frontend/`: React + Vite + TypeScript, Tailwind v4, คอมโพเนนต์แบบ shadcn ใน `src/components/ui`, ไอคอน lucide-react หน้าอยู่ใน `src/views/` ชิ้นส่วน UI ใน `src/components/` state และการดึงข้อมูลใน `src/hooks/` ฟังก์ชันล้วนใน `src/lib/` (ดู [docs/frontend-structure.md](docs/frontend-structure.md)) ใช้สีกลาง `bg-surface`, `bg-canvas`, `bg-accent` แทน `bg-white`/`bg-teal-700` เพื่อให้โหมดมืดทำงาน
+- เขียน JSX หลายบรรทัดให้อ่านง่าย ผู้ใช้ใช้โค้ดนี้ศึกษาการเขียน
 - `backend/`: Go + Fiber v3 แบบ clean architecture ตาราง/migration สร้างตอน server เริ่ม
 - PostgreSQL ผ่าน `compose.yaml`: `db` พอร์ต 5432 (ใช้งานจริง), `db-test` พอร์ต 5433 (e2e เท่านั้น)
 
@@ -37,4 +38,5 @@ e2e ล้างข้อมูลในฐาน `flashcards_test` เอง �
 
 - โฟลเดอร์ `vocabulary/` เป็นไฟล์ CSV ส่วนตัวของผู้ใช้ที่ยังไม่ได้ track อย่า `git add` โดยไม่ถาม
 - การ์ดใน Challenge ถูก `key` ตามรอบ/คำ/โหมด จึง remount ทุกคำ (`autoFocus` ทำงานทุกคำ)
-- ตรวจ UI ทั้งมือถือ (390px), notebook (~1280px) และ desktop (1440px+)
+- ตรวจ UI ทั้งมือถือ (390px), notebook (~1280px) และ desktop (1440px+) ทั้งโหมดสว่างและมืด
+- ระยะทบทวน (1, 3, 7, 14, 30, 60 วัน) อยู่ทั้ง `backend/internal/domain/card.go` และ `frontend/src/lib/cards.ts` ต้องแก้คู่กัน

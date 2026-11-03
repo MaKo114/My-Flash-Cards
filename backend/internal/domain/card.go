@@ -28,6 +28,8 @@ type Card struct {
 	DueOn        *string `json:"dueOn"`
 	CorrectCount int     `json:"correctCount"`
 	WrongCount   int     `json:"wrongCount"`
+	// FirstStudiedOn is the day of the first challenge answer; nil while the card is still new.
+	FirstStudiedOn *string `json:"firstStudiedOn"`
 }
 
 type Fields struct {

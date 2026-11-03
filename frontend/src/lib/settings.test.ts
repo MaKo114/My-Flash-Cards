@@ -13,7 +13,7 @@ describe('saved settings', () => {
   })
 
   it('restores saved settings', () => {
-    const settings = { firstLanguage: 'THAI', challengeMode: 'choice', soundEffects: false, shuffled: true, roundSize: 0 } as const
+    const settings = { firstLanguage: 'THAI', challengeMode: 'choice', soundEffects: false, shuffled: true, roundSize: 0, dailyGoal: 50, newPerDay: 0, speechRate: 0.75, accent: 'en-GB', theme: 'dark' } as const
     writeSettings(settings)
     expect(readSettings()).toEqual(settings)
   })

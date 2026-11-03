@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildChoices, cardsToCsv, filterByPartOfSpeech, filterCards, fitTextClass, isDue, memoryLevel, normalizeCard, studyStreak, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
+import { buildChoices, cardsToCsv, dailyPlan, scheduleAnswer, filterByPartOfSpeech, filterCards, fitTextClass, isDue, memoryLevel, normalizeCard, studyStreak, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
 
-const extra = { example: '', srsStep: 0, dueOn: null, correctCount: 0, wrongCount: 0 }
+const extra = { example: '', srsStep: 0, dueOn: null, correctCount: 0, wrongCount: 0, firstStudiedOn: null }
 
 const cards: Card[] = [
   { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', partsOfSpeech: ['noun'], meanings: ['แอปเปิล'], hint: '', needsReview: false, ...extra },
@@ -97,8 +97,8 @@ describe('review schedule and statistics', () => {
   const base = cards[0]
 
   it('fills fields missing from older data', () => {
-    const { example: _example, srsStep: _step, dueOn: _due, correctCount: _correct, wrongCount: _wrong, ...legacy } = base
-    expect(normalizeCard(legacy)).toEqual({ ...legacy, example: '', srsStep: 0, dueOn: null, correctCount: 0, wrongCount: 0 })
+    const { example: _example, srsStep: _step, dueOn: _due, correctCount: _correct, wrongCount: _wrong, firstStudiedOn: _first, ...legacy } = base
+    expect(normalizeCard(legacy)).toEqual({ ...legacy, example: '', srsStep: 0, dueOn: null, correctCount: 0, wrongCount: 0, firstStudiedOn: null })
   })
 
   it('treats a card as due on or after its review day', () => {
@@ -127,5 +127,30 @@ describe('review schedule and statistics', () => {
   it('exports every field in the format the import reads back', () => {
     const run = { ...base, word: 'Run', partsOfSpeech: ['verb', 'noun'], meanings: ['วิ่ง', 'การวิ่ง'], hint: 'ใช้ "ขา"', example: 'I run, you walk.' }
     expect(cardsToCsv([run])).toBe('﻿คำศัพท์,ชนิดของคำ,ความหมาย,คำใบ้,ตัวอย่างประโยค\r\n"Run","verb, noun","วิ่ง, การวิ่ง","ใช้ ""ขา""","I run, you walk."\r\n')
+  })
+})
+
+describe('daily practice', () => {
+  const base = cards[0]
+
+  it('predicts the same schedule as the server', () => {
+    const first = scheduleAnswer(base, true, '2026-11-03')
+    expect(first).toMatchObject({ srsStep: 1, dueOn: '2026-11-04', needsReview: false, correctCount: 1, firstStudiedOn: '2026-11-03' })
+    const steps = [first]
+    for (let index = 0; index < 6; index++) steps.push(scheduleAnswer(steps.at(-1)!, true, '2026-11-03'))
+    expect(steps.map(card => card.dueOn)).toEqual(['2026-11-04', '2026-11-06', '2026-11-10', '2026-11-17', '2026-12-03', '2027-01-02', '2027-01-02'])
+    const wrong = scheduleAnswer(steps.at(-1)!, false, '2026-11-05')
+    expect(wrong).toMatchObject({ srsStep: 0, dueOn: '2026-11-05', needsReview: true, wrongCount: 1, firstStudiedOn: '2026-11-03' })
+  })
+
+  it('plans due cards plus new cards up to the daily limit', () => {
+    const due = { ...base, id: 10, dueOn: '2026-11-02', firstStudiedOn: '2026-10-01' }
+    const later = { ...base, id: 11, dueOn: '2026-11-09', firstStudiedOn: '2026-11-03' }
+    const fresh = [12, 13, 14].map(id => ({ ...base, id }))
+    const plan = dailyPlan([due, later, ...fresh], '2026-11-03', 3)
+    expect(plan.due.map(card => card.id)).toEqual([10])
+    expect(plan.startedToday).toBe(1)
+    expect(plan.fresh.map(card => card.id)).toEqual([12, 13])
+    expect(dailyPlan([due, later, ...fresh], '2026-11-03', 0).fresh).toEqual([])
   })
 })
