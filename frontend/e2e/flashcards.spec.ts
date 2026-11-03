@@ -274,7 +274,13 @@ test('groups a word with multiple parts and asks its spelling once per challenge
 
   await page.goto('/')
   await page.getByRole('button', { name: 'เพิ่มคำศัพท์' }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'เพิ่มคำศัพท์' }).click()
+  await expect(page.getByText('กรุณากรอกคำศัพท์ภาษาอังกฤษ')).toBeVisible()
+  await expect(page.getByText('กรุณาเลือกชนิดของคำให้ครบ')).toBeVisible()
+  await expect(page.getByText('กรุณากรอกความหมายอย่างน้อยหนึ่งความหมาย')).toBeVisible()
+  await expect(page.getByLabel('คำศัพท์ภาษาอังกฤษ')).toBeFocused()
   await page.getByLabel('คำศัพท์ภาษาอังกฤษ').fill('run')
+  await expect(page.getByText('กรุณากรอกคำศัพท์ภาษาอังกฤษ')).toHaveCount(0)
   await page.getByRole('combobox', { name: 'ชนิดของคำ', exact: true }).click()
   await page.getByRole('option', { name: 'verb', exact: true }).click()
   await page.getByRole('button', { name: 'เพิ่มชนิดของคำ' }).click()

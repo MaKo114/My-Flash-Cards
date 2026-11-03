@@ -61,3 +61,13 @@ export function typingFeedback(word: string, answer: string) {
 export function isTypingMatch(word: string, answer: string) {
   return Array.from(word).length === Array.from(answer).length && typingFeedback(word, answer).every(letter => letter.correct)
 }
+
+// Shrinks the headline font for long words or meanings so it never overflows the card.
+// Only Latin words count as unbreakable: Thai text has no spaces and wraps anywhere.
+export function fitTextClass(text: string) {
+  const longestWord = Math.max(0, ...text.split(/\s+/).filter(word => /^[\x21-\x7E]+$/.test(word)).map(word => word.length))
+  if (text.length <= 20 && longestWord <= 14) return 'text-3xl sm:text-5xl'
+  if (text.length <= 45 && longestWord <= 18) return 'text-2xl sm:text-4xl'
+  if (text.length <= 90) return 'text-xl sm:text-3xl'
+  return 'text-lg sm:text-2xl'
+}

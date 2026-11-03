@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterByPartOfSpeech, filterCards, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
+import { filterByPartOfSpeech, filterCards, fitTextClass, isTypingMatch, searchCards, shuffleCards, typingFeedback, type Card } from './cards'
 
 const cards: Card[] = [
   { id: 1, word: 'Apple', partOfSpeech: 'noun', meaning: 'แอปเปิล', partsOfSpeech: ['noun'], meanings: ['แอปเปิล'], hint: '', needsReview: false },
@@ -46,5 +46,14 @@ describe('study deck', () => {
     expect(isTypingMatch('Apple', 'apple')).toBe(true)
     expect(isTypingMatch('Apple', 'Apxle')).toBe(false)
     expect(isTypingMatch('Apple', 'Apples')).toBe(false)
+  })
+})
+
+describe('card headline size', () => {
+  it('keeps short words large and shrinks long words or meanings', () => {
+    expect(fitTextClass('Apple')).toBe('text-3xl sm:text-5xl')
+    expect(fitTextClass('Incomprehensibilities')).toBe('text-xl sm:text-3xl')
+    expect(fitTextClass('ละทิ้ง, ทอดทิ้ง')).toBe('text-3xl sm:text-5xl')
+    expect(fitTextClass('สิ่งที่ไม่อาจเข้าใจได้อย่างถ่องแท้ไม่ว่าจะพยายามอธิบายอย่างไรก็ตาม, ความเข้าใจยาก, ความลึกลับซับซ้อนเกินกว่าจะเข้าใจ')).toBe('text-lg sm:text-2xl')
   })
 })
