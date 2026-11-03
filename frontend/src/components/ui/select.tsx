@@ -36,13 +36,13 @@ export function Select({ id, label, value, onValueChange, options, placeholder, 
 
   return <Popover.Root open={open} onOpenChange={next => { setOpen(next); if (!next) setSearch('') }}>
     <Popover.Trigger asChild>
-      <button type="button" id={id} role="combobox" aria-label={label} aria-expanded={open} aria-required={required} onKeyDown={handleTriggerKeyDown} className={cn('inline-flex h-10 min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition-colors hover:border-teal-300 hover:bg-teal-50/40 focus-visible:border-teal-500 focus-visible:ring-2 focus-visible:ring-teal-200 data-[state=open]:border-teal-500 data-[state=open]:ring-2 data-[state=open]:ring-teal-100', className)}>
+      <button type="button" id={id} role="combobox" aria-label={label} aria-expanded={open} aria-required={required} onKeyDown={handleTriggerKeyDown} className={cn('inline-flex h-10 min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-surface px-3.5 text-left text-sm font-semibold text-slate-700 shadow-sm outline-none transition-colors hover:border-teal-300 hover:bg-teal-50/40 focus-visible:border-teal-500 focus-visible:ring-2 focus-visible:ring-teal-200 data-[state=open]:border-teal-500 data-[state=open]:ring-2 data-[state=open]:ring-teal-100', className)}>
         <span className={cn('min-w-0 truncate', !selected && 'text-slate-400')}>{selected?.label || placeholder}</span>
         <ChevronDown aria-hidden="true" size={16} className="shrink-0 text-slate-400" />
       </button>
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content align="start" sideOffset={6} collisionPadding={12} onOpenAutoFocus={event => { event.preventDefault(); inputRef.current?.focus() }} className="z-[70] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-[0_18px_48px_-18px_rgba(15,47,44,.28)]" style={{ minWidth: 'max(11rem, var(--radix-popover-trigger-width))', maxHeight: 'var(--radix-popover-content-available-height)' }}>
+      <Popover.Content align="start" sideOffset={6} collisionPadding={12} onOpenAutoFocus={event => { event.preventDefault(); inputRef.current?.focus() }} className="z-[70] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-slate-200 bg-surface p-1.5 text-slate-700 shadow-[0_18px_48px_-18px_rgba(15,47,44,.28)]" style={{ minWidth: 'max(11rem, var(--radix-popover-trigger-width))', maxHeight: 'var(--radix-popover-content-available-height)' }}>
         <Command label={`ค้นหา${label}`} loop filter={(candidate, term) => {
           const optionLabel = options.find(option => option.value === candidate)?.label.toLocaleLowerCase()
           const query = term.toLocaleLowerCase()

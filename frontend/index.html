@@ -3,13 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f4f8f7" />
+    <meta name="theme-color" content="#f4f8f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b1418" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
     <title>My Flash Cards</title>
     <meta name="description" content="My Flash Cards: เว็บบัตรคำศัพท์อังกฤษ–ไทย ฝึกจำ ฝึกพิมพ์ และทบทวนคำที่ยังจำไม่ได้" />
+    <script>
+      // Apply the saved theme before the first paint so dark mode never flashes white.
+      // Keep the key and logic in sync with src/lib/settings.ts and src/hooks/useSettings.ts.
+      try {
+        var theme = (JSON.parse(localStorage.getItem('flashcards.settings.v1') || '{}') || {}).theme
+        if (theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark')
+        }
+      } catch (error) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Loaded without blocking the first paint; the system font shows until Prompt arrives. -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body>
     <div id="root"></div>

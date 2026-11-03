@@ -13,6 +13,8 @@ export type Card = {
   dueOn: string | null
   correctCount: number
   wrongCount: number
+  // The day of the first challenge answer; null while the card is still new.
+  firstStudiedOn: string | null
 }
 
 export type CardFields = Pick<Card, 'word' | 'partsOfSpeech' | 'meanings' | 'hint' | 'example'>
@@ -21,7 +23,15 @@ export type StudyDay = { date: string; answers: number; correct: number }
 
 // Fills fields that older API responses or cached snapshots may not have.
 export function normalizeCard(card: Partial<Card> & Pick<Card, 'id' | 'word' | 'partOfSpeech' | 'meaning' | 'partsOfSpeech' | 'meanings' | 'hint' | 'needsReview'>): Card {
-  return { ...card, example: card.example ?? '', srsStep: card.srsStep ?? 0, dueOn: card.dueOn ?? null, correctCount: card.correctCount ?? 0, wrongCount: card.wrongCount ?? 0 }
+  return {
+    ...card,
+    example: card.example ?? '',
+    srsStep: card.srsStep ?? 0,
+    dueOn: card.dueOn ?? null,
+    correctCount: card.correctCount ?? 0,
+    wrongCount: card.wrongCount ?? 0,
+    firstStudiedOn: card.firstStudiedOn ?? null,
+  }
 }
 
 export function localDay(date = new Date()) {
@@ -30,6 +40,37 @@ export function localDay(date = new Date()) {
 
 export function isDue(card: Card, today: string) {
   return card.dueOn !== null && card.dueOn <= today
+}
+
+// Days to wait after each correct answer in a row; the backend uses the same steps.
+export const reviewIntervals = [1, 3, 7, 14, 30, 60]
+
+function addDays(day: string, days: number) {
+  const date = new Date(`${day}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  return localDay(date)
+}
+
+// Predicts what the server will save for an answer, so the app can move on without waiting for it.
+export function scheduleAnswer(card: Card, correct: boolean, today: string): Card {
+  const step = correct ? Math.min(Math.max(card.srsStep, 0) + 1, reviewIntervals.length) : 0
+  return {
+    ...card,
+    srsStep: step,
+    dueOn: correct ? addDays(today, reviewIntervals[step - 1]) : today,
+    needsReview: !correct,
+    correctCount: card.correctCount + (correct ? 1 : 0),
+    wrongCount: card.wrongCount + (correct ? 0 : 1),
+    firstStudiedOn: card.firstStudiedOn ?? today,
+  }
+}
+
+// Today's practice: every card due for review, plus new cards up to the daily limit.
+export function dailyPlan(cards: Card[], today: string, newPerDay: number) {
+  const due = cards.filter(card => isDue(card, today))
+  const startedToday = cards.filter(card => card.firstStudiedOn === today).length
+  const fresh = cards.filter(card => card.dueOn === null).slice(0, Math.max(0, newPerDay - startedToday))
+  return { due, fresh, startedToday }
 }
 
 export type MemoryLevel = 'new' | 'learning' | 'familiar' | 'mastered'

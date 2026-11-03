@@ -1,23 +1,119 @@
 @import "tailwindcss";
 
+/* `dark:` utilities follow the .dark class on <html> (set from the theme setting), not only the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Prompt", Tahoma, sans-serif;
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.5;
   --text-sm: 0.9375rem;
   --text-sm--line-height: 1.6;
+
+  /* Semantic colors. Components use these instead of white/teal so one place controls both themes. */
+  --color-canvas: #f4f8f7;        /* page background */
+  --color-surface: #ffffff;       /* cards, inputs, menus and dialogs */
+  --color-accent: #0f766e;        /* primary buttons, selected chips, progress */
+  --color-accent-strong: #115e59; /* hover state of accent */
 }
 
-:root { font-family: var(--font-sans); color: #1f3440; background: #f4f8f7; font-synthesis: none; }
+/*
+ * Dark theme.
+ * The neutral (slate) scale is flipped so "text-slate-900" stays the strongest text and
+ * "bg-slate-50" stays the faintest fill. Pale tints (50–200) of the other hues become dark
+ * tints of the same hue, and their deep shades (700–900, used for text) become light ones.
+ * The mid shades (300–600) and the accent keep their values.
+ */
+.dark {
+  color-scheme: dark;
+  --color-canvas: #0b1418;
+  --color-surface: #13212a;
+  --color-accent: #0f766e;
+  --color-accent-strong: #0d9488;
+
+  --color-slate-50: #182a33;
+  --color-slate-100: #1d313b;
+  --color-slate-200: #2a404b;
+  --color-slate-300: #3b5561;
+  --color-slate-400: #6a8591;
+  --color-slate-500: #91a8b2;
+  --color-slate-600: #adc0c8;
+  --color-slate-700: #c7d5db;
+  --color-slate-800: #dce6ea;
+  --color-slate-900: #eef4f6;
+  --color-slate-950: #f8fbfc;
+}
+
+/* The same recipe for every hue the app uses, written once per hue. */
+.dark {
+  --color-teal-50: color-mix(in oklab, var(--color-teal-500) 14%, var(--color-surface));
+  --color-teal-100: color-mix(in oklab, var(--color-teal-500) 24%, var(--color-surface));
+  --color-teal-200: color-mix(in oklab, var(--color-teal-500) 38%, var(--color-surface));
+  --color-teal-700: var(--color-teal-300);
+  --color-teal-800: color-mix(in oklab, var(--color-teal-300) 60%, white);
+  --color-teal-900: color-mix(in oklab, var(--color-teal-300) 35%, white);
+
+  --color-amber-50: color-mix(in oklab, var(--color-amber-500) 14%, var(--color-surface));
+  --color-amber-100: color-mix(in oklab, var(--color-amber-500) 24%, var(--color-surface));
+  --color-amber-200: color-mix(in oklab, var(--color-amber-500) 38%, var(--color-surface));
+  --color-amber-700: var(--color-amber-300);
+  --color-amber-800: color-mix(in oklab, var(--color-amber-300) 60%, white);
+  --color-amber-900: color-mix(in oklab, var(--color-amber-300) 35%, white);
+
+  --color-rose-50: color-mix(in oklab, var(--color-rose-500) 14%, var(--color-surface));
+  --color-rose-100: color-mix(in oklab, var(--color-rose-500) 24%, var(--color-surface));
+  --color-rose-200: color-mix(in oklab, var(--color-rose-500) 38%, var(--color-surface));
+  --color-rose-700: var(--color-rose-300);
+  --color-rose-800: color-mix(in oklab, var(--color-rose-300) 60%, white);
+  --color-rose-900: color-mix(in oklab, var(--color-rose-300) 35%, white);
+
+  --color-red-50: color-mix(in oklab, var(--color-red-500) 14%, var(--color-surface));
+  --color-red-100: color-mix(in oklab, var(--color-red-500) 24%, var(--color-surface));
+  --color-red-200: color-mix(in oklab, var(--color-red-500) 38%, var(--color-surface));
+  --color-red-700: var(--color-red-300);
+  --color-red-800: color-mix(in oklab, var(--color-red-300) 60%, white);
+
+  --color-emerald-50: color-mix(in oklab, var(--color-emerald-500) 14%, var(--color-surface));
+  --color-emerald-100: color-mix(in oklab, var(--color-emerald-500) 24%, var(--color-surface));
+  --color-emerald-200: color-mix(in oklab, var(--color-emerald-500) 38%, var(--color-surface));
+  --color-emerald-700: var(--color-emerald-300);
+  --color-emerald-800: color-mix(in oklab, var(--color-emerald-300) 60%, white);
+  --color-emerald-900: color-mix(in oklab, var(--color-emerald-300) 35%, white);
+
+  --color-sky-50: color-mix(in oklab, var(--color-sky-500) 14%, var(--color-surface));
+  --color-sky-200: color-mix(in oklab, var(--color-sky-500) 38%, var(--color-surface));
+  --color-sky-800: color-mix(in oklab, var(--color-sky-300) 60%, white);
+
+  --color-orange-50: color-mix(in oklab, var(--color-orange-500) 14%, var(--color-surface));
+  --color-orange-200: color-mix(in oklab, var(--color-orange-500) 38%, var(--color-surface));
+  --color-orange-800: color-mix(in oklab, var(--color-orange-300) 60%, white);
+
+  --color-violet-50: color-mix(in oklab, var(--color-violet-500) 14%, var(--color-surface));
+  --color-violet-200: color-mix(in oklab, var(--color-violet-500) 38%, var(--color-surface));
+  --color-violet-800: color-mix(in oklab, var(--color-violet-300) 60%, white);
+
+  --color-pink-50: color-mix(in oklab, var(--color-pink-500) 14%, var(--color-surface));
+  --color-pink-200: color-mix(in oklab, var(--color-pink-500) 38%, var(--color-surface));
+  --color-pink-800: color-mix(in oklab, var(--color-pink-300) 60%, white);
+
+  --color-cyan-50: color-mix(in oklab, var(--color-cyan-500) 14%, var(--color-surface));
+  --color-cyan-200: color-mix(in oklab, var(--color-cyan-500) 38%, var(--color-surface));
+  --color-cyan-800: color-mix(in oklab, var(--color-cyan-300) 60%, white);
+
+  --color-purple-50: color-mix(in oklab, var(--color-purple-500) 14%, var(--color-surface));
+  --color-purple-200: color-mix(in oklab, var(--color-purple-500) 38%, var(--color-surface));
+  --color-purple-800: color-mix(in oklab, var(--color-purple-300) 60%, white);
+}
+
+:root { font-family: var(--font-sans); color: var(--color-slate-800); background: var(--color-canvas); font-synthesis: none; }
 html { scrollbar-gutter: stable; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-::selection { background: #bcece4; }
+::selection { background: color-mix(in oklab, var(--color-teal-300) 60%, transparent); }
 
 .study-card { perspective: 1200px; }
 .study-card-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 550ms cubic-bezier(.2,.75,.25,1); }
-.study-card.flipped .study-card-inner { transform: rotateY(180deg); }
 .study-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .study-face.back { transform: rotateY(180deg); }

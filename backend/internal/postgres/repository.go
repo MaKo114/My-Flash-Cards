@@ -11,7 +11,7 @@ import (
 	"my-flash-cards/backend/internal/domain"
 )
 
-const columns = "id, word, part_of_speech, meaning, parts_of_speech, meanings, hint, example, needs_review, srs_step, to_char(due_on, 'YYYY-MM-DD'), correct_count, wrong_count"
+const columns = "id, word, part_of_speech, meaning, parts_of_speech, meanings, hint, example, needs_review, srs_step, to_char(due_on, 'YYYY-MM-DD'), correct_count, wrong_count, to_char(first_studied_on, 'YYYY-MM-DD')"
 
 type Repository struct{ db *pgxpool.Pool }
 
@@ -19,7 +19,7 @@ func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 func scan(row pgx.Row) (domain.Card, error) {
 	var card domain.Card
-	err := row.Scan(&card.ID, &card.Word, &card.PartOfSpeech, &card.Meaning, &card.PartsOfSpeech, &card.Meanings, &card.Hint, &card.Example, &card.NeedsReview, &card.SRSStep, &card.DueOn, &card.CorrectCount, &card.WrongCount)
+	err := row.Scan(&card.ID, &card.Word, &card.PartOfSpeech, &card.Meaning, &card.PartsOfSpeech, &card.Meanings, &card.Hint, &card.Example, &card.NeedsReview, &card.SRSStep, &card.DueOn, &card.CorrectCount, &card.WrongCount, &card.FirstStudiedOn)
 	return card, translate(err)
 }
 
@@ -136,8 +136,9 @@ func (r *Repository) RecordAnswer(ctx context.Context, id int64, correct bool, t
 		`UPDATE cards SET srs_step=$2, due_on=$3, needs_review=NOT $4,
 			correct_count = correct_count + CASE WHEN $4 THEN 1 ELSE 0 END,
 			wrong_count = wrong_count + CASE WHEN $4 THEN 0 ELSE 1 END,
+			first_studied_on = COALESCE(first_studied_on, $5),
 			updated_at=now()
-		WHERE id=$1 RETURNING `+columns, id, step, due, correct))
+		WHERE id=$1 RETURNING `+columns, id, step, due, correct, today))
 	if err != nil {
 		return domain.Card{}, err
 	}

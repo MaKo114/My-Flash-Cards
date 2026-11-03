@@ -80,13 +80,26 @@ func (h *Handler) login(c fiber.Ctx) error {
 	}
 	now := time.Now()
 	ip := clientIP(c)
-	if h.auth.Blocked(ip, now) {
+	ctx, cancel := requestContext()
+	defer cancel()
+	blocked, err := h.auth.Blocked(ctx, ip, now)
+	if err != nil {
+		return respondError(c, err)
+	}
+	if blocked {
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่"})
 	}
 	var body struct {
 		Password string `json:"password"`
 	}
-	if json.Unmarshal(c.Body(), &body) != nil || !h.auth.Check(ip, body.Password, now) {
+	if json.Unmarshal(c.Body(), &body) != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "รหัสผ่านไม่ถูกต้อง"})
+	}
+	ok, err := h.auth.Check(ctx, ip, body.Password, now)
+	if err != nil {
+		return respondError(c, err)
+	}
+	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "รหัสผ่านไม่ถูกต้อง"})
 	}
 	return c.JSON(fiber.Map{"token": h.auth.Token(now)})
