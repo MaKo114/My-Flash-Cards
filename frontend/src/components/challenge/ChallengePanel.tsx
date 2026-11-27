@@ -68,6 +68,18 @@ export function ChallengePanel({ card, pool, mode, firstLanguage, soundEffects, 
     return stopSpeaking
   }, [card.word, typing])
 
+  // Ctrl+Space (⌘+Space on Mac) replays the word, so the hands can stay on the keyboard while typing.
+  useEffect(() => {
+    if (!typing || !speechSupported) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== 'Space' || !(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      speak(card.word)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [card.word, typing])
+
   useEffect(() => {
     if (mode === 'meaning' && revealed) assessRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [mode, revealed])
@@ -155,7 +167,7 @@ export function ChallengePanel({ card, pool, mode, firstLanguage, soundEffects, 
       {/* The question */}
       <div className="flex min-h-32 flex-col items-center justify-center px-2 pb-4 text-center sm:min-h-40">
         <span className="mb-3 rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal-800">
-          {mode === 'listen' ? 'ฟังแล้วพิมพ์' : mode === 'copy' ? 'พิมพ์ตามคำศัพท์' : firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}
+          {mode === 'listen' ? 'ฝึกฟัง' : mode === 'copy' ? 'ฝึกสะกด' : firstLanguage === 'ENG' ? 'ENGLISH' : 'ความหมาย'}
         </span>
 
         {mode === 'copy' && (
@@ -197,10 +209,21 @@ export function ChallengePanel({ card, pool, mode, firstLanguage, soundEffects, 
           </p>
         )}
         {typing && speechSupported && (
-          <Button variant="secondary" size="sm" type="button" onClick={() => speak(card.word)} className="mt-4"><Volume2 size={16} /> ฟังอีกครั้ง</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            onClick={() => speak(card.word)}
+            aria-keyshortcuts="Control+Space"
+            title="ฟังอีกครั้ง (Ctrl+Space)"
+            className="mt-4"
+          >
+            <Volume2 size={16} /> ฟังอีกครั้ง
+            <kbd className="ml-1 hidden rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-500 sm:inline">Ctrl+Space</kbd>
+          </Button>
         )}
         {mode === 'listen' && !speechSupported && (
-          <p role="alert" className="mt-3 text-sm text-amber-700">เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน ลองใช้โหมดพิมพ์ตามคำศัพท์</p>
+          <p role="alert" className="mt-3 text-sm text-amber-700">เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน ลองใช้โหมดฝึกสะกด</p>
         )}
         {hint && !revealed && picked === null && (
           <div className="mt-3">

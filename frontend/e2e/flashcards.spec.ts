@@ -126,7 +126,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await expect(page.getByRole('button', { name: 'เริ่ม Challenge' })).toBeVisible()
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'ฟังอีกครั้ง' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'ทบทวนความหมาย' }).click()
+  await page.getByRole('button', { name: 'ทายความหมาย' }).click()
   await page.getByRole('button', { name: 'ENG', exact: true }).click()
   await page.getByRole('button', { name: 'สุ่มคำ เปิด' }).click()
   await letterFilter.click()
@@ -147,9 +147,11 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByRole('button', { name: 'ยังจำไม่ได้' }).click()
   await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
   await expect(page.getByText('จำได้ 1 คำ · ยังจำไม่ได้ 1 คำ')).toBeVisible()
-  const afterChallenge = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
-  expect(afterChallenge.find(card => card.word === 'Apple')?.needsReview).toBe(true)
-  expect(afterChallenge.find(card => card.word === 'Ant')?.needsReview).toBe(false)
+  // Answers are saved in the background, so wait for the server to catch up.
+  await expect.poll(async () => {
+    const afterChallenge = await (await request.get(`${api}/cards`)).json() as { word: string; needsReview: boolean }[]
+    return [afterChallenge.find(card => card.word === 'Apple')?.needsReview, afterChallenge.find(card => card.word === 'Ant')?.needsReview]
+  }).toEqual([true, false])
 
   await page.getByRole('button', { name: 'ต้องทบทวน', exact: true }).click()
   await page.getByRole('button', { name: 'THAI', exact: true }).click()
@@ -164,7 +166,7 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   expect(afterReviewChallenge.find(card => card.word === 'Apple')?.needsReview).toBe(false)
 
   await page.getByRole('button', { name: 'ต้องทบทวน', exact: true }).click()
-  await page.getByRole('button', { name: 'เห็นคำแล้วพิมพ์' }).click()
+  await page.getByRole('button', { name: 'ฝึกสะกด' }).click()
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   const copyWord = (await page.getByTestId('challenge-prompt').textContent())!
@@ -197,11 +199,11 @@ test('manage, search, study and challenge cards', async ({ page, request }) => {
   await page.getByRole('button', { name: 'เสียงตอบรับ เปิด' }).click()
   await expect(page.getByRole('button', { name: 'เสียงตอบรับ ปิด' })).toHaveAttribute('aria-pressed', 'false')
 
-  await page.getByRole('button', { name: 'ฟังแล้วพิมพ์' }).click()
+  await page.getByRole('button', { name: 'ฝึกฟัง' }).click()
   await expect(page.getByRole('dialog')).toContainText('รอบนี้ทำไปแล้ว 1 จาก 2 คำ')
   await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก' }).click()
   await expect(page.getByText('คำที่ 2 จาก 2')).toBeVisible()
-  await page.getByRole('button', { name: 'ฟังแล้วพิมพ์' }).click()
+  await page.getByRole('button', { name: 'ฝึกฟัง' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'เริ่มรอบใหม่' }).click()
   await expect(page.getByTestId('challenge-prompt')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'ฟังอีกครั้ง' })).toHaveCount(0)
@@ -326,7 +328,7 @@ test('groups a word with multiple parts and asks its spelling once per challenge
   await page.getByLabel('พิมพ์คำศัพท์ภาษาอังกฤษ').press('Enter')
   await expect(page.getByText('จบรอบ Challenge')).toBeVisible()
 
-  await page.getByRole('button', { name: 'ทบทวนความหมาย' }).click()
+  await page.getByRole('button', { name: 'ทายความหมาย' }).click()
   await page.getByRole('button', { name: 'เริ่ม Challenge' }).click()
   await expect(page.getByTestId('challenge-prompt')).toHaveText('About')
   await page.getByLabel('คำตอบของฉัน').fill('ประมาณ')
@@ -377,7 +379,7 @@ test('multiple choice rounds, retrying missed words and saved settings', async (
 
   await page.goto('/')
   await page.getByRole('button', { name: 'Challenge', exact: true }).click()
-  await page.getByRole('button', { name: 'เลือกคำตอบ' }).click()
+  await page.getByRole('button', { name: 'เลือกข้อถูก' }).click()
   await expect(page.getByRole('button', { name: 'ENG', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('combobox', { name: 'จำนวนคำต่อรอบ' }).click()
   await page.getByRole('option', { name: '10 คำ', exact: true }).click()
@@ -428,7 +430,7 @@ test('multiple choice rounds, retrying missed words and saved settings', async (
 
   await page.reload()
   await page.getByRole('button', { name: 'Challenge', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'เลือกคำตอบ' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'เลือกข้อถูก' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('button', { name: 'THAI', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('combobox', { name: 'จำนวนคำต่อรอบ' })).toContainText('10 คำ')
   await expect(page.getByText('พร้อมฝึก 10 คำ')).toBeVisible()

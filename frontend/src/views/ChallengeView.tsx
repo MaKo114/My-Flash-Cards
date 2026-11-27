@@ -13,10 +13,10 @@ import type { Card } from '@/lib/cards'
 import { roundSizes, type ChallengeMode, type Language } from '@/lib/settings'
 
 const modes: { mode: ChallengeMode; label: string }[] = [
-  { mode: 'copy', label: 'เห็นคำแล้วพิมพ์' },
-  { mode: 'listen', label: 'ฟังแล้วพิมพ์' },
-  { mode: 'meaning', label: 'ทบทวนความหมาย' },
-  { mode: 'choice', label: 'เลือกคำตอบ' },
+  { mode: 'copy', label: 'ฝึกสะกด' },
+  { mode: 'listen', label: 'ฝึกฟัง' },
+  { mode: 'meaning', label: 'ทายความหมาย' },
+  { mode: 'choice', label: 'เลือกข้อถูก' },
 ]
 
 const startHints: Record<ChallengeMode, string> = {
